@@ -6,11 +6,12 @@ package de.uka.ilkd.key.mcp;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import de.uka.ilkd.key.mcp.json.Json;
 import de.uka.ilkd.key.mcp.protocol.JsonRpcCodec;
-import de.uka.ilkd.key.mcp.protocol.McpError;
 import de.uka.ilkd.key.mcp.protocol.McpRequest;
+import de.uka.ilkd.key.mcp.session.McpSession;
 import de.uka.ilkd.key.mcp.transport.StdioTransport;
 
 import org.slf4j.Logger;
@@ -28,18 +29,33 @@ public class KeyMcpServer {
 
     private static final String PROTOCOL_VERSION = "2025-11-25";
 
-    private StdioTransport transport;
+    StdioTransport transport;
     private volatile boolean initialized;
 
+    private final McpServerConfig config;
+    private McpSession session;
+    private McpToolRegistry toolRegistry;
+    private McpResourceHandler resourceHandler;
+    private McpPromptHandler promptHandler;
+
     public KeyMcpServer(StdioTransport transport) {
+        this(transport, McpServerConfig.fromEnvironment());
+    }
+
+    public KeyMcpServer(StdioTransport transport, McpServerConfig config) {
         this.transport = transport;
+        this.config = config;
     }
 
     /**
      * Creates a server attached to standard input and output.
      */
     public static KeyMcpServer stdio() {
-        KeyMcpServer server = new KeyMcpServer(null);
+        return stdio(McpServerConfig.fromEnvironment());
+    }
+
+    public static KeyMcpServer stdio(McpServerConfig config) {
+        KeyMcpServer server = new KeyMcpServer(null, config);
         StdioTransport transport = new StdioTransport(System.in, System.out, server::handleMessage);
         server.transport = transport;
         return server;
@@ -68,8 +84,11 @@ public class KeyMcpServer {
         }
         case "ping" -> handlePing(request);
         case "tools/list" -> handleToolsList(request);
+        case "tools/call" -> handleToolsCall(request);
         case "resources/list" -> handleResourcesList(request);
+        case "resources/read" -> handleResourcesRead(request);
         case "prompts/list" -> handlePromptsList(request);
+        case "prompts/get" -> handlePromptsGet(request);
         default -> JsonRpcCodec.encodeError(request.id(), -32601, "Method not found: " + request.method(), null);
         };
     }
@@ -79,6 +98,12 @@ public class KeyMcpServer {
             return JsonRpcCodec.encodeError(request.id(), -32600, "Session already initialized", null);
         }
         initialized = true;
+
+        String sessionId = UUID.randomUUID().toString();
+        session = new McpSession(sessionId);
+        toolRegistry = new McpToolRegistry(config, session);
+        resourceHandler = new McpResourceHandler(session);
+        promptHandler = new McpPromptHandler();
 
         Map<String, Object> serverInfo = Json.object();
         serverInfo.put("name", "key-mcp");
@@ -104,20 +129,62 @@ public class KeyMcpServer {
 
     private String handleToolsList(McpRequest request) {
         Map<String, Object> result = Json.object();
-        result.put("tools", List.of());
+        result.put("tools", toolRegistry.listTools());
         return JsonRpcCodec.encodeSuccess(request.id(), result);
+    }
+
+    private String handleToolsCall(McpRequest request) {
+        Map<String, Object> params = request.params();
+        String name = (String) params.get("name");
+        Object arguments = params.get("arguments");
+        Map<String, Object> argumentsMap = (arguments instanceof Map) ? (Map<String, Object>) arguments : Map.of();
+        try {
+            Map<String, Object> result = toolRegistry.execute(name, argumentsMap);
+            return JsonRpcCodec.encodeSuccess(request.id(), result);
+        } catch (McpSecurityException e) {
+            return JsonRpcCodec.encodeError(request.id(), -32001, e.getMessage(), null);
+        } catch (McpToolException e) {
+            return JsonRpcCodec.encodeError(request.id(), e.code(), e.getMessage(), e.data());
+        } catch (Exception e) {
+            LOGGER.error("Tool execution failed: {}", name, e);
+            return JsonRpcCodec.encodeError(request.id(), -32603, "Tool execution failed: " + e.getMessage(), null);
+        }
     }
 
     private String handleResourcesList(McpRequest request) {
         Map<String, Object> result = Json.object();
-        result.put("resources", List.of());
+        result.put("resources", resourceHandler.listResources());
         return JsonRpcCodec.encodeSuccess(request.id(), result);
+    }
+
+    private String handleResourcesRead(McpRequest request) {
+        String uri = (String) request.params().get("uri");
+        try {
+            Map<String, Object> contents = resourceHandler.readResource(uri);
+            Map<String, Object> result = Json.object();
+            result.put("contents", List.of(contents));
+            return JsonRpcCodec.encodeSuccess(request.id(), result);
+        } catch (McpToolException e) {
+            return JsonRpcCodec.encodeError(request.id(), e.code(), e.getMessage(), e.data());
+        }
     }
 
     private String handlePromptsList(McpRequest request) {
         Map<String, Object> result = Json.object();
-        result.put("prompts", List.of());
+        result.put("prompts", promptHandler.listPrompts());
         return JsonRpcCodec.encodeSuccess(request.id(), result);
+    }
+
+    private String handlePromptsGet(McpRequest request) {
+        String name = (String) request.params().get("name");
+        Object arguments = request.params().get("arguments");
+        Map<String, Object> argumentsMap = (arguments instanceof Map) ? (Map<String, Object>) arguments : Map.of();
+        try {
+            Map<String, Object> result = promptHandler.getPrompt(name, argumentsMap);
+            return JsonRpcCodec.encodeSuccess(request.id(), result);
+        } catch (McpToolException e) {
+            return JsonRpcCodec.encodeError(request.id(), e.code(), e.getMessage(), e.data());
+        }
     }
 
     /**
