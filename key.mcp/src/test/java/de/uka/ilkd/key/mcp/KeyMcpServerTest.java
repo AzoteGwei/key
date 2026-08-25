@@ -16,12 +16,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 class KeyMcpServerTest {
 
     private KeyMcpServer createServer() {
+        return createServer(List.of());
+    }
+
+    private KeyMcpServer createServer(List<String> smtSolvers) {
         TestTransport transport = new TestTransport();
         Path root = Path.of(System.getProperty("user.dir")).toAbsolutePath().getParent();
         McpServerConfig config = new McpServerConfig(
             root,
             List.of(root),
-            60000L, 10000L, "4g", List.of());
+            60000L, 10000L, "4g", smtSolvers);
         return new KeyMcpServer(transport, config);
     }
 
@@ -236,6 +240,42 @@ class KeyMcpServerTest {
         Map<String, Object> ceResult = callTool(server, 5, "key_proof_counterexample", Map.of("proofId", proofId));
         assertThat(ceResult.get("supported")).isEqualTo(false);
         assertThat((String) ceResult.get("message")).contains("KEY_MCP_SMT_SOLVERS");
+    }
+
+    @Test
+    void counterexampleWithZ3CeSolver() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(isZ3Available(), "z3 binary not available");
+        KeyMcpServer server = createServer(List.of("Z3_CE"));
+        initialize(server);
+        loadExampleProject(server);
+        Map<String, Object> contractsResult = contractsResult(server);
+        List<?> contracts = (List<?>) contractsResult.get("contracts");
+        String contractId = findContractId(contracts, "sub");
+        assertThat(contractId).isNotNull();
+
+        Map<String, Object> autoResult = callTool(server, 4, "key_proof_auto", Map.of(
+            "contractId", contractId,
+            "timeoutMs", 30000,
+            "maxSteps", 10000,
+            "async", false));
+        String proofId = (String) autoResult.get("proofId");
+        assertThat(autoResult.get("state")).isEqualTo("completed");
+
+        Map<String, Object> ceResult = callTool(server, 5, "key_proof_counterexample", Map.of(
+            "proofId", proofId, "solver", "Z3_CE"));
+        assertThat(ceResult.get("supported")).isEqualTo(true);
+        assertThat(ceResult.get("result")).isEqualTo("FALSIFIABLE");
+        assertThat((String) ceResult.get("counterexample")).isNotBlank();
+    }
+
+    private static boolean isZ3Available() {
+        try {
+            Process process = new ProcessBuilder("z3", "--version").start();
+            process.waitFor();
+            return process.exitValue() == 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @Test

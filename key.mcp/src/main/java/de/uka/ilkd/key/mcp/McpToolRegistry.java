@@ -658,9 +658,12 @@ public class McpToolRegistry {
         try {
             launcher.launch(problem, proof.getServices(), solverType);
         } catch (Exception e) {
+            java.io.StringWriter sw = new java.io.StringWriter();
+            e.printStackTrace(new java.io.PrintWriter(sw));
             throw new McpToolException(-32603,
-                "Failed to run SMT solver '" + solverType.getName() + "': " + e.getMessage(),
-                e.getMessage());
+                "Failed to run SMT solver '" + solverType.getName() + "': "
+                    + e.getClass().getSimpleName() + ": " + e.getMessage(),
+                sw.toString());
         }
 
         SMTSolverResult solverResult = problem.getFinalResult();
