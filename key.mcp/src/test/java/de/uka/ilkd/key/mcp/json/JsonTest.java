@@ -15,7 +15,8 @@ class JsonTest {
 
     @Test
     void parseObject() {
-        Map<String, Object> parsed = Json.parseObject("{\"name\":\"key\",\"count\":42,\"ok\":true,\"list\":[1,2,3]}");
+        Map<String, Object> parsed =
+            Json.parseObject("{\"name\":\"key\",\"count\":42,\"ok\":true,\"list\":[1,2,3]}");
         assertThat(parsed.get("name")).isEqualTo("key");
         assertThat(parsed.get("count")).isEqualTo(42);
         assertThat(parsed.get("ok")).isEqualTo(Boolean.TRUE);
@@ -37,7 +38,7 @@ class JsonTest {
     @Test
     void parseInvalidObjectThrows() {
         assertThatThrownBy(() -> Json.parseObject("[1,2,3]"))
-            .isInstanceOf(JsonParseException.class);
+                .isInstanceOf(JsonParseException.class);
     }
 
     @Test

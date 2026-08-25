@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: GPL-2.0-only */
 package de.uka.ilkd.key.mcp.protocol;
 
-import java.util.Map;
 
 /**
  * A parsed MCP JSON-RPC response.

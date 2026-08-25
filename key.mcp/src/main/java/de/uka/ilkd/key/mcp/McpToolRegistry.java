@@ -16,7 +16,6 @@ import de.uka.ilkd.key.control.AbstractUserInterfaceControl;
 import de.uka.ilkd.key.control.KeYEnvironment;
 import de.uka.ilkd.key.mcp.json.Json;
 import de.uka.ilkd.key.mcp.operation.Operation;
-import de.uka.ilkd.key.mcp.operation.Operation.State;
 import de.uka.ilkd.key.mcp.session.McpSession;
 import de.uka.ilkd.key.nparser.KeyAst;
 import de.uka.ilkd.key.nparser.ParsingFacade;
@@ -72,25 +71,25 @@ public class McpToolRegistry {
 
     public Map<String, Object> execute(String name, Map<String, Object> params) {
         return switch (name) {
-        case "key_session_info" -> handleSessionInfo(params);
-        case "key_session_reset" -> handleSessionReset(params);
-        case "key_session_dispose" -> handleSessionDispose(params);
-        case "key_project_load" -> handleProjectLoad(params);
-        case "key_contracts_list" -> handleContractsList(params);
-        case "key_proof_create" -> handleProofCreate(params);
-        case "key_proof_auto" -> handleProofAuto(params);
-        case "key_proof_status" -> handleProofStatus(params);
-        case "key_operation_wait" -> handleOperationWait(params);
-        case "key_operation_cancel" -> handleOperationCancel(params);
-        case "key_proof_goals_list" -> handleProofGoalsList(params);
-        case "key_proof_goal_get" -> handleProofGoalGet(params);
-        case "key_proof_rule_apply" -> handleProofRuleApply(params);
-        case "key_proof_script_run" -> handleProofScriptRun(params);
-        case "key_proof_undo" -> handleProofUndo(params);
-        case "key_proof_export" -> handleProofExport(params);
-        case "key_proof_smt" -> handleProofSmt(params);
-        case "key_proof_counterexample" -> handleProofCounterexample(params);
-        default -> throw new IllegalArgumentException("Tool not implemented: " + name);
+            case "key_session_info" -> handleSessionInfo(params);
+            case "key_session_reset" -> handleSessionReset(params);
+            case "key_session_dispose" -> handleSessionDispose(params);
+            case "key_project_load" -> handleProjectLoad(params);
+            case "key_contracts_list" -> handleContractsList(params);
+            case "key_proof_create" -> handleProofCreate(params);
+            case "key_proof_auto" -> handleProofAuto(params);
+            case "key_proof_status" -> handleProofStatus(params);
+            case "key_operation_wait" -> handleOperationWait(params);
+            case "key_operation_cancel" -> handleOperationCancel(params);
+            case "key_proof_goals_list" -> handleProofGoalsList(params);
+            case "key_proof_goal_get" -> handleProofGoalGet(params);
+            case "key_proof_rule_apply" -> handleProofRuleApply(params);
+            case "key_proof_script_run" -> handleProofScriptRun(params);
+            case "key_proof_undo" -> handleProofUndo(params);
+            case "key_proof_export" -> handleProofExport(params);
+            case "key_proof_smt" -> handleProofSmt(params);
+            case "key_proof_counterexample" -> handleProofCounterexample(params);
+            default -> throw new IllegalArgumentException("Tool not implemented: " + name);
         };
     }
 
@@ -98,15 +97,18 @@ public class McpToolRegistry {
         Map<String, Object> schema = Json.object();
         schema.put("name", "key_session_info");
         schema.put("description", "Get information about the current MCP session.");
-        schema.put("inputSchema", Map.of("type", "object", "properties", Map.of(), "required", List.of()));
+        schema.put("inputSchema",
+            Map.of("type", "object", "properties", Map.of(), "required", List.of()));
         return schema;
     }
 
     private Map<String, Object> sessionReset() {
         Map<String, Object> schema = Json.object();
         schema.put("name", "key_session_reset");
-        schema.put("description", "Reset the session, disposing all proofs and the current KeY environment.");
-        schema.put("inputSchema", Map.of("type", "object", "properties", Map.of(), "required", List.of()));
+        schema.put("description",
+            "Reset the session, disposing all proofs and the current KeY environment.");
+        schema.put("inputSchema",
+            Map.of("type", "object", "properties", Map.of(), "required", List.of()));
         return schema;
     }
 
@@ -114,7 +116,8 @@ public class McpToolRegistry {
         Map<String, Object> schema = Json.object();
         schema.put("name", "key_session_dispose");
         schema.put("description", "Dispose the session and release all resources.");
-        schema.put("inputSchema", Map.of("type", "object", "properties", Map.of(), "required", List.of()));
+        schema.put("inputSchema",
+            Map.of("type", "object", "properties", Map.of(), "required", List.of()));
         return schema;
     }
 
@@ -124,12 +127,14 @@ public class McpToolRegistry {
         schema.put("description", "Load a KeY project from a directory or .key file.");
 
         Map<String, Object> properties = Json.object();
-        properties.put("location", Map.of("type", "string", "description", "Path to the project directory or .key file"));
+        properties.put("location",
+            Map.of("type", "string", "description", "Path to the project directory or .key file"));
         properties.put("classPaths", Map.of("type", "array", "items", Map.of("type", "string")));
         properties.put("bootClassPath", Map.of("type", "string"));
         properties.put("includes", Map.of("type", "array", "items", Map.of("type", "string")));
 
-        schema.put("inputSchema", Map.of("type", "object", "properties", properties, "required", List.of("location")));
+        schema.put("inputSchema",
+            Map.of("type", "object", "properties", properties, "required", List.of("location")));
         return schema;
     }
 
@@ -137,7 +142,8 @@ public class McpToolRegistry {
         Map<String, Object> schema = Json.object();
         schema.put("name", "key_contracts_list");
         schema.put("description", "List all verification contracts in the loaded project.");
-        schema.put("inputSchema", Map.of("type", "object", "properties", Map.of(), "required", List.of()));
+        schema.put("inputSchema",
+            Map.of("type", "object", "properties", Map.of(), "required", List.of()));
         return schema;
     }
 
@@ -162,14 +168,16 @@ public class McpToolRegistry {
 
     private Map<String, Object> handleProjectLoad(Map<String, Object> params) {
         String location = (String) params.get("location");
-        Path projectPath = PathValidator.resolveAndValidate(location, config.workspace(), config.allowedPaths());
+        Path projectPath =
+            PathValidator.resolveAndValidate(location, config.workspace(), config.allowedPaths());
 
         List<Path> classPaths = toPathList(params.get("classPaths"));
         Path bootClassPath = toPath(params.get("bootClassPath"));
         List<Path> includes = toPathList(params.get("includes"));
 
         try {
-            KeYEnvironment<?> env = KeYEnvironment.load(projectPath, classPaths, bootClassPath, includes);
+            KeYEnvironment<?> env =
+                KeYEnvironment.load(projectPath, classPaths, bootClassPath, includes);
             session.dispose();
             session.setEnvironment(env);
             session.loadContracts();
@@ -180,7 +188,8 @@ public class McpToolRegistry {
             result.put("contractCount", session.getContracts().size());
             return result;
         } catch (ProblemLoaderException e) {
-            throw new McpToolException(-32603, "Failed to load project: " + e.getMessage(), e.getMessage());
+            throw new McpToolException(-32603, "Failed to load project: " + e.getMessage(),
+                e.getMessage());
         }
     }
 
@@ -319,7 +328,8 @@ public class McpToolRegistry {
         schema.put("description", "Export a proof as a KeY .proof file or as a JSON tree.");
         Map<String, Object> properties = Json.object();
         properties.put("proofId", Map.of("type", "string"));
-        properties.put("format", Map.of("type", "string", "enum", List.of("proof", "json"), "default", "proof"));
+        properties.put("format",
+            Map.of("type", "string", "enum", List.of("proof", "json"), "default", "proof"));
         properties.put("path", Map.of("type", "string"));
         schema.put("inputSchema", Map.of("type", "object", "properties", properties,
             "required", List.of("proofId")));
@@ -373,7 +383,8 @@ public class McpToolRegistry {
         configureStrategy(proof, maxSteps, strategyOptions);
 
         Operation operation = session.getOperationTracker().start(proofId, "proof_auto");
-        Thread worker = new Thread(() -> runAutoMode(operation, proof, timeoutMs), "key-proof-auto-" + operation.getId());
+        Thread worker = new Thread(() -> runAutoMode(operation, proof, timeoutMs),
+            "key-proof-auto-" + operation.getId());
         operation.setWorkerThread(worker);
         worker.start();
 
@@ -388,7 +399,8 @@ public class McpToolRegistry {
                 worker.join(timeoutMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new McpToolException(-32603, "Interrupted while waiting for proof", e.getMessage());
+                throw new McpToolException(-32603, "Interrupted while waiting for proof",
+                    e.getMessage());
             }
             return statusOf(operation);
         }
@@ -479,7 +491,8 @@ public class McpToolRegistry {
             Thread.currentThread().interrupt();
             throw new McpToolException(-32603, "Interrupted", e.getMessage());
         } catch (ScriptException e) {
-            throw new McpToolException(-32603, "Rule application failed: " + e.getMessage(), e.getMessage());
+            throw new McpToolException(-32603, "Rule application failed: " + e.getMessage(),
+                e.getMessage());
         }
 
         Map<String, Object> result = Json.object();
@@ -538,29 +551,31 @@ public class McpToolRegistry {
         result.put("format", format);
 
         switch (format) {
-        case "proof": {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            try {
-                new OutputStreamProofSaver(proof).save(config.workspace(), baos);
-                String content = baos.toString(java.nio.charset.StandardCharsets.UTF_8);
-                if (path != null) {
-                    Path target = PathValidator.resolveAndValidate(path, config.workspace(), config.allowedPaths());
-                    java.nio.file.Files.writeString(target, content);
-                    result.put("path", target.toString());
-                } else {
-                    result.put("content", content);
+            case "proof": {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                try {
+                    new OutputStreamProofSaver(proof).save(config.workspace(), baos);
+                    String content = baos.toString(java.nio.charset.StandardCharsets.UTF_8);
+                    if (path != null) {
+                        Path target = PathValidator.resolveAndValidate(path, config.workspace(),
+                            config.allowedPaths());
+                        java.nio.file.Files.writeString(target, content);
+                        result.put("path", target.toString());
+                    } else {
+                        result.put("content", content);
+                    }
+                } catch (IOException e) {
+                    throw new McpToolException(-32603, "Failed to export proof: " + e.getMessage(),
+                        e.getMessage());
                 }
-            } catch (IOException e) {
-                throw new McpToolException(-32603, "Failed to export proof: " + e.getMessage(), e.getMessage());
+                break;
             }
-            break;
-        }
-        case "json": {
-            result.put("tree", proofTreeJson(proof.root()));
-            break;
-        }
-        default:
-            throw new McpToolException(-32602, "Unknown export format: " + format, null);
+            case "json": {
+                result.put("tree", proofTreeJson(proof.root()));
+                break;
+            }
+            default:
+                throw new McpToolException(-32602, "Unknown export format: " + format, null);
         }
         return result;
     }
@@ -578,14 +593,17 @@ public class McpToolRegistry {
             proof.getSettings().getNewSMTSettings(), proof);
 
         try {
-            SmtLib2Translator translator = new SmtLib2Translator(new String[0], new String[0], null);
-            String text = translator.translateProblem(goal.sequent(), proof.getServices(), settings).toString();
+            SmtLib2Translator translator =
+                new SmtLib2Translator(new String[0], new String[0], null);
+            String text = translator.translateProblem(goal.sequent(), proof.getServices(), settings)
+                    .toString();
             Map<String, Object> result = Json.object();
             result.put("proofId", proofId);
             result.put("smt", text);
             return result;
         } catch (Exception e) {
-            throw new McpToolException(-32603, "SMT translation failed: " + e.getMessage(), e.getMessage());
+            throw new McpToolException(-32603, "SMT translation failed: " + e.getMessage(),
+                e.getMessage());
         }
     }
 
@@ -636,9 +654,11 @@ public class McpToolRegistry {
         throw new McpToolException(-32002, "Goal not found: " + index, null);
     }
 
-    private void executeScript(Proof proof, String scriptText) throws ScriptException, InterruptedException {
+    private void executeScript(Proof proof, String scriptText)
+            throws ScriptException, InterruptedException {
         ensureEnvironment();
-        AbstractUserInterfaceControl ui = (AbstractUserInterfaceControl) session.getEnvironment().getUi();
+        AbstractUserInterfaceControl ui =
+            (AbstractUserInterfaceControl) session.getEnvironment().getUi();
         KeyAst.ProofScript script = ParsingFacade.parseScript(scriptText);
         ProofScriptEngine engine = new ProofScriptEngine(proof);
         engine.setInitiallySelectedGoal(proof.openGoals().head());
@@ -662,17 +682,21 @@ public class McpToolRegistry {
             return session.getEnvironment().createProof(contract.createProofObl(
                 session.getEnvironment().getInitConfig(), contract));
         } catch (ProofInputException e) {
-            throw new McpToolException(-32603, "Failed to create proof: " + e.getMessage(), e.getMessage());
+            throw new McpToolException(-32603, "Failed to create proof: " + e.getMessage(),
+                e.getMessage());
         }
     }
 
     private void configureStrategy(Proof proof, long maxSteps, Object strategyOptions) {
-        StrategyProperties sp = proof.getSettings().getStrategySettings().getActiveStrategyProperties();
+        StrategyProperties sp =
+            proof.getSettings().getStrategySettings().getActiveStrategyProperties();
         sp.setProperty(StrategyProperties.METHOD_OPTIONS_KEY, StrategyProperties.METHOD_CONTRACT);
         sp.setProperty(StrategyProperties.DEP_OPTIONS_KEY, StrategyProperties.DEP_ON);
         sp.setProperty(StrategyProperties.QUERY_OPTIONS_KEY, StrategyProperties.QUERY_ON);
-        sp.setProperty(StrategyProperties.NON_LIN_ARITH_OPTIONS_KEY, StrategyProperties.NON_LIN_ARITH_DEF_OPS);
-        sp.setProperty(StrategyProperties.STOPMODE_OPTIONS_KEY, StrategyProperties.STOPMODE_NONCLOSE);
+        sp.setProperty(StrategyProperties.NON_LIN_ARITH_OPTIONS_KEY,
+            StrategyProperties.NON_LIN_ARITH_DEF_OPS);
+        sp.setProperty(StrategyProperties.STOPMODE_OPTIONS_KEY,
+            StrategyProperties.STOPMODE_NONCLOSE);
 
         if (strategyOptions instanceof Map<?, ?> options) {
             for (Map.Entry<?, ?> entry : options.entrySet()) {
@@ -684,7 +708,8 @@ public class McpToolRegistry {
         proof.getSettings().getStrategySettings().setMaxSteps((int) maxSteps);
         ProofSettings.DEFAULT_SETTINGS.getStrategySettings().setMaxSteps((int) maxSteps);
         ProofSettings.DEFAULT_SETTINGS.getStrategySettings().setActiveStrategyProperties(sp);
-        proof.setActiveStrategy(proof.getServices().getProfile().getDefaultStrategyFactory().create(proof, sp));
+        proof.setActiveStrategy(
+            proof.getServices().getProfile().getDefaultStrategyFactory().create(proof, sp));
     }
 
     private void runAutoMode(Operation operation, Proof proof, long timeoutMs) {
@@ -739,7 +764,8 @@ public class McpToolRegistry {
 
     private void ensureEnvironment() {
         if (session.getEnvironment() == null) {
-            throw new McpToolException(-32603, "No project loaded. Call key_project_load first.", null);
+            throw new McpToolException(-32603, "No project loaded. Call key_project_load first.",
+                null);
         }
     }
 

@@ -8,18 +8,22 @@ import java.util.*;
 /**
  * A tiny JSON parser and serializer used by the KeY MCP server.
  *
- * <p>This implementation intentionally avoids third-party JSON libraries to keep the
+ * <p>
+ * This implementation intentionally avoids third-party JSON libraries to keep the
  * {@code key.mcp} module free of additional runtime dependencies and potential license
- * conflicts with KeY's GPL-2.0-only licensing.</p>
+ * conflicts with KeY's GPL-2.0-only licensing.
+ * </p>
  *
- * <p>Supported value types:</p>
+ * <p>
+ * Supported value types:
+ * </p>
  * <ul>
- *   <li>{@link Map} (JSON object, iteration order preserved via {@link LinkedHashMap})</li>
- *   <li>{@link List} (JSON array)</li>
- *   <li>{@link String}</li>
- *   <li>{@link Number} ({@link Long} for integral values, {@link Double} otherwise)</li>
- *   <li>{@link Boolean}</li>
- *   <li>{@code null} for JSON {@code null}</li>
+ * <li>{@link Map} (JSON object, iteration order preserved via {@link LinkedHashMap})</li>
+ * <li>{@link List} (JSON array)</li>
+ * <li>{@link String}</li>
+ * <li>{@link Number} ({@link Long} for integral values, {@link Double} otherwise)</li>
+ * <li>{@link Boolean}</li>
+ * <li>{@code null} for JSON {@code null}</li>
  * </ul>
  */
 public final class Json {
@@ -54,7 +58,8 @@ public final class Json {
     public static Map<String, Object> parseObject(String input) {
         Object value = parse(input);
         if (!(value instanceof Map)) {
-            throw new JsonParseException("Expected JSON object, got " + value.getClass().getSimpleName());
+            throw new JsonParseException(
+                "Expected JSON object, got " + value.getClass().getSimpleName());
         }
         return (Map<String, Object>) value;
     }
@@ -109,7 +114,8 @@ public final class Json {
         } else if (value instanceof Number) {
             sb.append(value);
         } else {
-            throw new IllegalArgumentException("Unsupported JSON value type: " + value.getClass().getName());
+            throw new IllegalArgumentException(
+                "Unsupported JSON value type: " + value.getClass().getName());
         }
     }
 
@@ -118,33 +124,33 @@ public final class Json {
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             switch (c) {
-            case '"':
-                sb.append("\\\"");
-                break;
-            case '\\':
-                sb.append("\\\\");
-                break;
-            case '\b':
-                sb.append("\\b");
-                break;
-            case '\f':
-                sb.append("\\f");
-                break;
-            case '\n':
-                sb.append("\\n");
-                break;
-            case '\r':
-                sb.append("\\r");
-                break;
-            case '\t':
-                sb.append("\\t");
-                break;
-            default:
-                if (c < 0x20) {
-                    sb.append(String.format("\\u%04x", (int) c));
-                } else {
-                    sb.append(c);
-                }
+                case '"':
+                    sb.append("\\\"");
+                    break;
+                case '\\':
+                    sb.append("\\\\");
+                    break;
+                case '\b':
+                    sb.append("\\b");
+                    break;
+                case '\f':
+                    sb.append("\\f");
+                    break;
+                case '\n':
+                    sb.append("\\n");
+                    break;
+                case '\r':
+                    sb.append("\\r");
+                    break;
+                case '\t':
+                    sb.append("\\t");
+                    break;
+                default:
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
             }
         }
         sb.append('"');
@@ -182,17 +188,18 @@ public final class Json {
             }
             char c = input.charAt(pos);
             return switch (c) {
-            case '{' -> parseObject();
-            case '[' -> parseArray();
-            case '"' -> parseString();
-            case 't', 'f' -> parseBoolean();
-            case 'n' -> parseNull();
-            default -> {
-                if (c == '-' || (c >= '0' && c <= '9')) {
-                    yield parseNumber();
+                case '{' -> parseObject();
+                case '[' -> parseArray();
+                case '"' -> parseString();
+                case 't', 'f' -> parseBoolean();
+                case 'n' -> parseNull();
+                default -> {
+                    if (c == '-' || (c >= '0' && c <= '9')) {
+                        yield parseNumber();
+                    }
+                    throw new JsonParseException(
+                        "Unexpected character '" + c + "' at position " + pos);
                 }
-                throw new JsonParseException("Unexpected character '" + c + "' at position " + pos);
-            }
             };
         }
 
@@ -260,29 +267,31 @@ public final class Json {
                     }
                     char esc = input.charAt(pos++);
                     switch (esc) {
-                    case '"', '\\', '/' -> sb.append(esc);
-                    case 'b' -> sb.append('\b');
-                    case 'f' -> sb.append('\f');
-                    case 'n' -> sb.append('\n');
-                    case 'r' -> sb.append('\r');
-                    case 't' -> sb.append('\t');
-                    case 'u' -> {
-                        if (pos + 4 > length) {
-                            throw new JsonParseException("Invalid unicode escape");
+                        case '"', '\\', '/' -> sb.append(esc);
+                        case 'b' -> sb.append('\b');
+                        case 'f' -> sb.append('\f');
+                        case 'n' -> sb.append('\n');
+                        case 'r' -> sb.append('\r');
+                        case 't' -> sb.append('\t');
+                        case 'u' -> {
+                            if (pos + 4 > length) {
+                                throw new JsonParseException("Invalid unicode escape");
+                            }
+                            String hex = input.substring(pos, pos + 4);
+                            try {
+                                int code = Integer.parseInt(hex, 16);
+                                sb.append((char) code);
+                                pos += 4;
+                            } catch (NumberFormatException e) {
+                                throw new JsonParseException("Invalid unicode escape: " + hex);
+                            }
                         }
-                        String hex = input.substring(pos, pos + 4);
-                        try {
-                            int code = Integer.parseInt(hex, 16);
-                            sb.append((char) code);
-                            pos += 4;
-                        } catch (NumberFormatException e) {
-                            throw new JsonParseException("Invalid unicode escape: " + hex);
-                        }
-                    }
-                    default -> throw new JsonParseException("Invalid escape character: \\" + esc);
+                        default ->
+                            throw new JsonParseException("Invalid escape character: \\" + esc);
                     }
                 } else if (c < 0x20) {
-                    throw new JsonParseException("Unescaped control character at position " + (pos - 1));
+                    throw new JsonParseException(
+                        "Unescaped control character at position " + (pos - 1));
                 } else {
                     sb.append(c);
                 }

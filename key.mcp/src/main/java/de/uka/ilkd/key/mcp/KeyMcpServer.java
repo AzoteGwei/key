@@ -20,9 +20,11 @@ import org.slf4j.LoggerFactory;
 /**
  * KeY MCP server implementation.
  *
- * <p>Implements the server side of the Model Context Protocol over stdio. The server
+ * <p>
+ * Implements the server side of the Model Context Protocol over stdio. The server
  * is single-session and exclusive: after a successful {@code initialize} it owns one
- * KeY environment and rejects a second {@code initialize}.</p>
+ * KeY environment and rejects a second {@code initialize}.
+ * </p>
  */
 public class KeyMcpServer {
     private static final Logger LOGGER = LoggerFactory.getLogger(KeyMcpServer.class);
@@ -70,32 +72,35 @@ public class KeyMcpServer {
             }
         } catch (Exception e) {
             LOGGER.error("Failed to handle message: {}", message, e);
-            String errorJson = JsonRpcCodec.encodeError(null, -32603, "Internal error: " + e.getMessage(), null);
+            String errorJson =
+                JsonRpcCodec.encodeError(null, -32603, "Internal error: " + e.getMessage(), null);
             transport.send(errorJson);
         }
     }
 
     private String handleRequest(McpRequest request) {
         return switch (request.method()) {
-        case "initialize" -> handleInitialize(request);
-        case "notifications/initialized" -> {
-            // No response for notifications.
-            yield null;
-        }
-        case "ping" -> handlePing(request);
-        case "tools/list" -> handleToolsList(request);
-        case "tools/call" -> handleToolsCall(request);
-        case "resources/list" -> handleResourcesList(request);
-        case "resources/read" -> handleResourcesRead(request);
-        case "prompts/list" -> handlePromptsList(request);
-        case "prompts/get" -> handlePromptsGet(request);
-        default -> JsonRpcCodec.encodeError(request.id(), -32601, "Method not found: " + request.method(), null);
+            case "initialize" -> handleInitialize(request);
+            case "notifications/initialized" -> {
+                // No response for notifications.
+                yield null;
+            }
+            case "ping" -> handlePing(request);
+            case "tools/list" -> handleToolsList(request);
+            case "tools/call" -> handleToolsCall(request);
+            case "resources/list" -> handleResourcesList(request);
+            case "resources/read" -> handleResourcesRead(request);
+            case "prompts/list" -> handlePromptsList(request);
+            case "prompts/get" -> handlePromptsGet(request);
+            default -> JsonRpcCodec.encodeError(request.id(), -32601,
+                "Method not found: " + request.method(), null);
         };
     }
 
     private String handleInitialize(McpRequest request) {
         if (initialized) {
-            return JsonRpcCodec.encodeError(request.id(), -32600, "Session already initialized", null);
+            return JsonRpcCodec.encodeError(request.id(), -32600, "Session already initialized",
+                null);
         }
         initialized = true;
 
@@ -137,7 +142,8 @@ public class KeyMcpServer {
         Map<String, Object> params = request.params();
         String name = (String) params.get("name");
         Object arguments = params.get("arguments");
-        Map<String, Object> argumentsMap = (arguments instanceof Map) ? (Map<String, Object>) arguments : Map.of();
+        Map<String, Object> argumentsMap =
+            (arguments instanceof Map) ? (Map<String, Object>) arguments : Map.of();
         try {
             Map<String, Object> result = toolRegistry.execute(name, argumentsMap);
             return JsonRpcCodec.encodeSuccess(request.id(), result);
@@ -147,7 +153,8 @@ public class KeyMcpServer {
             return JsonRpcCodec.encodeError(request.id(), e.code(), e.getMessage(), e.data());
         } catch (Exception e) {
             LOGGER.error("Tool execution failed: {}", name, e);
-            return JsonRpcCodec.encodeError(request.id(), -32603, "Tool execution failed: " + e.getMessage(), null);
+            return JsonRpcCodec.encodeError(request.id(), -32603,
+                "Tool execution failed: " + e.getMessage(), null);
         }
     }
 
@@ -178,7 +185,8 @@ public class KeyMcpServer {
     private String handlePromptsGet(McpRequest request) {
         String name = (String) request.params().get("name");
         Object arguments = request.params().get("arguments");
-        Map<String, Object> argumentsMap = (arguments instanceof Map) ? (Map<String, Object>) arguments : Map.of();
+        Map<String, Object> argumentsMap =
+            (arguments instanceof Map) ? (Map<String, Object>) arguments : Map.of();
         try {
             Map<String, Object> result = promptHandler.getPrompt(name, argumentsMap);
             return JsonRpcCodec.encodeSuccess(request.id(), result);

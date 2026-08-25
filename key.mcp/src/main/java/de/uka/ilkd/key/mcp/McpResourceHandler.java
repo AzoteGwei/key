@@ -34,12 +34,17 @@ public class McpResourceHandler {
         resources.add(resource("session:///info", "Session information", "application/json"));
         resources.add(resource("project:///contracts", "Contracts list", "application/json"));
         for (String proofId : session.getProofs().keySet()) {
-            resources.add(resource("proof://" + proofId + "/status", "Proof status", "application/json"));
-            resources.add(resource("proof://" + proofId + "/goals", "Proof goals", "application/json"));
-            resources.add(resource("proof://" + proofId + "/tree", "Proof tree", "application/json"));
-            resources.add(resource("proof://" + proofId + "/export", "Proof export", "application/octet-stream"));
+            resources.add(
+                resource("proof://" + proofId + "/status", "Proof status", "application/json"));
+            resources.add(
+                resource("proof://" + proofId + "/goals", "Proof goals", "application/json"));
+            resources.add(
+                resource("proof://" + proofId + "/tree", "Proof tree", "application/json"));
+            resources.add(resource("proof://" + proofId + "/export", "Proof export",
+                "application/octet-stream"));
             resources.add(resource("proof://" + proofId + "/smt", "SMT translation", "text/plain"));
-            resources.add(resource("proof://" + proofId + "/counterexample", "Counterexample", "text/plain"));
+            resources.add(
+                resource("proof://" + proofId + "/counterexample", "Counterexample", "text/plain"));
         }
         return resources;
     }
@@ -93,33 +98,35 @@ public class McpResourceHandler {
         Map<String, Object> result = Json.object();
         result.put("uri", uri);
         switch (suffix) {
-        case "status":
-            result.put("text", statusText(proof));
-            break;
-        case "goals":
-            result.put("text", goalsJson(proof));
-            break;
-        case "goal":
-            if (parts.length < 3) {
-                throw new McpToolException(-32602, "Missing goal id in URI: " + uri, null);
-            }
-            int goalId = Integer.parseInt(parts[2]);
-            result.put("text", goalJson(proof, goalId));
-            break;
-        case "tree":
-            result.put("text", Json.stringify(proofTreeJson(proof.root())));
-            break;
-        case "export":
-            result.put("text", exportProof(proof));
-            break;
-        case "smt":
-            result.put("text", smtText(proof));
-            break;
-        case "counterexample":
-            result.put("text", "Counterexample extraction requires an explicitly enabled SMT solver and is not yet implemented in this version.");
-            break;
-        default:
-            throw new McpToolException(-32002, "Unknown proof resource suffix: " + suffix, null);
+            case "status":
+                result.put("text", statusText(proof));
+                break;
+            case "goals":
+                result.put("text", goalsJson(proof));
+                break;
+            case "goal":
+                if (parts.length < 3) {
+                    throw new McpToolException(-32602, "Missing goal id in URI: " + uri, null);
+                }
+                int goalId = Integer.parseInt(parts[2]);
+                result.put("text", goalJson(proof, goalId));
+                break;
+            case "tree":
+                result.put("text", Json.stringify(proofTreeJson(proof.root())));
+                break;
+            case "export":
+                result.put("text", exportProof(proof));
+                break;
+            case "smt":
+                result.put("text", smtText(proof));
+                break;
+            case "counterexample":
+                result.put("text",
+                    "Counterexample extraction requires an explicitly enabled SMT solver and is not yet implemented in this version.");
+                break;
+            default:
+                throw new McpToolException(-32002, "Unknown proof resource suffix: " + suffix,
+                    null);
         }
         return result;
     }
@@ -190,7 +197,8 @@ public class McpResourceHandler {
             new OutputStreamProofSaver(proof).save(null, baos);
             return baos.toString(java.nio.charset.StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new McpToolException(-32603, "Failed to export proof: " + e.getMessage(), e.getMessage());
+            throw new McpToolException(-32603, "Failed to export proof: " + e.getMessage(),
+                e.getMessage());
         }
     }
 
@@ -203,10 +211,13 @@ public class McpResourceHandler {
             ProofIndependentSMTSettings.getDefaultSettingsData(),
             proof.getSettings().getNewSMTSettings(), proof);
         try {
-            SmtLib2Translator translator = new SmtLib2Translator(new String[0], new String[0], null);
-            return translator.translateProblem(goal.sequent(), proof.getServices(), settings).toString();
+            SmtLib2Translator translator =
+                new SmtLib2Translator(new String[0], new String[0], null);
+            return translator.translateProblem(goal.sequent(), proof.getServices(), settings)
+                    .toString();
         } catch (Exception e) {
-            throw new McpToolException(-32603, "SMT translation failed: " + e.getMessage(), e.getMessage());
+            throw new McpToolException(-32603, "SMT translation failed: " + e.getMessage(),
+                e.getMessage());
         }
     }
 }

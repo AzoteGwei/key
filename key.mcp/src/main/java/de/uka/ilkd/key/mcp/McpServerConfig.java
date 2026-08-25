@@ -25,14 +25,21 @@ public record McpServerConfig(
      * Reads configuration from environment variables.
      */
     public static McpServerConfig fromEnvironment() {
-        Path workspace = Paths.get(System.getenv().getOrDefault("KEY_MCP_WORKSPACE", System.getProperty("user.dir")))
-            .toAbsolutePath();
-        List<Path> allowedPaths = parsePathList(System.getenv().getOrDefault("KEY_MCP_ALLOWED_PATHS", workspace.toString()));
-        long defaultTimeoutMs = Long.parseLong(System.getenv().getOrDefault("KEY_MCP_DEFAULT_TIMEOUT_MS", "60000"));
-        long defaultMaxSteps = Long.parseLong(System.getenv().getOrDefault("KEY_MCP_DEFAULT_MAX_STEPS", "10000"));
+        Path workspace = Paths
+                .get(System.getenv().getOrDefault("KEY_MCP_WORKSPACE",
+                    System.getProperty("user.dir")))
+                .toAbsolutePath();
+        List<Path> allowedPaths = parsePathList(
+            System.getenv().getOrDefault("KEY_MCP_ALLOWED_PATHS", workspace.toString()));
+        long defaultTimeoutMs =
+            Long.parseLong(System.getenv().getOrDefault("KEY_MCP_DEFAULT_TIMEOUT_MS", "60000"));
+        long defaultMaxSteps =
+            Long.parseLong(System.getenv().getOrDefault("KEY_MCP_DEFAULT_MAX_STEPS", "10000"));
         String defaultMaxHeap = System.getenv().getOrDefault("KEY_MCP_DEFAULT_MAX_HEAP", "4g");
-        List<String> allowedSmtSolvers = parseStringList(System.getenv().getOrDefault("KEY_MCP_SMT_SOLVERS", ""));
-        return new McpServerConfig(workspace, allowedPaths, defaultTimeoutMs, defaultMaxSteps, defaultMaxHeap,
+        List<String> allowedSmtSolvers =
+            parseStringList(System.getenv().getOrDefault("KEY_MCP_SMT_SOLVERS", ""));
+        return new McpServerConfig(workspace, allowedPaths, defaultTimeoutMs, defaultMaxSteps,
+            defaultMaxHeap,
             allowedSmtSolvers);
     }
 
@@ -41,11 +48,11 @@ public record McpServerConfig(
             return Collections.emptyList();
         }
         return Arrays.stream(value.split(","))
-            .map(String::trim)
-            .filter(s -> !s.isEmpty())
-            .map(Paths::get)
-            .map(Path::toAbsolutePath)
-            .toList();
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(Paths::get)
+                .map(Path::toAbsolutePath)
+                .toList();
     }
 
     private static List<String> parseStringList(String value) {
@@ -53,8 +60,8 @@ public record McpServerConfig(
             return Collections.emptyList();
         }
         return Arrays.stream(value.split(","))
-            .map(String::trim)
-            .filter(s -> !s.isEmpty())
-            .toList();
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
 }

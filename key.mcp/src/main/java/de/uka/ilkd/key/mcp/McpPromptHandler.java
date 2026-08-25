@@ -38,12 +38,14 @@ public class McpPromptHandler {
         text.append("1. Call key_project_load to load the project directory or .key file.\n");
         text.append("2. Call key_contracts_list to list available contracts.\n");
         if (contractId != null) {
-            text.append("3. Use contractId ").append(contractId).append(" and call key_proof_auto.\n");
+            text.append("3. Use contractId ").append(contractId)
+                    .append(" and call key_proof_auto.\n");
         } else {
             text.append("3. Pick a contractId and call key_proof_auto.\n");
         }
         text.append("4. Wait for completion with key_operation_wait.\n");
-        text.append("5. If the proof is not closed, inspect goals with key_proof_goals_list and try key_proof_rule_apply or key_proof_script_run.\n");
+        text.append(
+            "5. If the proof is not closed, inspect goals with key_proof_goals_list and try key_proof_rule_apply or key_proof_script_run.\n");
         text.append("6. Export the result with key_proof_export.\n");
         message.put("content", Map.of("type", "text", "text", text.toString()));
         messages.add(message);
