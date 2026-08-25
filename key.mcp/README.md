@@ -93,8 +93,16 @@ docker run -i --rm key-mcp
 - `key_proof_rule_apply`, `key_proof_script_run`, `key_proof_undo`
 - `key_proof_export` (formats: `proof`, `json`)
 - `key_proof_smt`
-- `key_proof_counterexample`
+- `key_proof_counterexample` (requires `KEY_MCP_SMT_SOLVERS`, e.g. `Z3_CE`)
 - `key_operation_wait`, `key_operation_cancel`
+
+### Counterexample extraction
+
+`key_proof_counterexample` runs the configured SMT solver against the first open goal
+of a proof. Because KeY's SMT translation only accepts first-order goals, you should
+usually run `key_proof_auto` (or a proof script) first so the remaining goals are
+simplified. If the solver reports the sequent as falsifiable, the returned model
+contains constants, heaps, location sets and sequences in a human-readable format.
 
 ## Resources
 
@@ -111,4 +119,7 @@ docker run -i --rm key-mcp
 
 ## Prompts
 
-- `verify_contract`: guides an agent through the standard verification workflow.
+- `verify_contract`: verifies a single contract end-to-end.
+- `verify_all_contracts`: verifies all contracts of a loaded project and summarizes the results.
+- `diagnose_open_goals`: inspects open goals and suggests next interactive steps.
+- `extract_counterexample`: extracts a counterexample via the SMT solver for falsifiable goals.

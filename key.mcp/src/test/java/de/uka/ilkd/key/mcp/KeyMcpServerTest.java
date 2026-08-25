@@ -279,6 +279,27 @@ class KeyMcpServerTest {
     }
 
     @Test
+    void promptsListAndGet() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+        server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"prompts/list\",\"params\":{}}");
+        server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"prompts/get\",\"params\":{\"name\":\"extract_counterexample\",\"arguments\":{\"proofId\":\"proof_1\"}}}");
+        TestTransport transport = (TestTransport) server.transport;
+
+        Map<String, Object> listResponse = Json.parseObject(transport.getSentMessages().get(1));
+        Map<String, Object> listResult = (Map<String, Object>) listResponse.get("result");
+        List<?> prompts = (List<?>) listResult.get("prompts");
+        assertThat(prompts).hasSize(4);
+
+        Map<String, Object> getResponse = Json.parseObject(transport.getSentMessages().get(2));
+        Map<String, Object> getResult = (Map<String, Object>) getResponse.get("result");
+        List<?> messages = (List<?>) getResult.get("messages");
+        assertThat(messages).isNotEmpty();
+        Map<String, Object> content = (Map<String, Object>) ((Map<String, Object>) messages.get(0)).get("content");
+        assertThat((String) content.get("text")).contains("key_proof_counterexample");
+    }
+
+    @Test
     void resourcesReadAfterProofCreate() {
         KeyMcpServer server = createServer();
         initialize(server);
