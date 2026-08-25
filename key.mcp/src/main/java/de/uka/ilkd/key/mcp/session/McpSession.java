@@ -12,6 +12,7 @@ import java.util.Map;
 import de.uka.ilkd.key.control.KeYEnvironment;
 import de.uka.ilkd.key.java.ast.abstraction.KeYJavaType;
 import de.uka.ilkd.key.logic.op.IObserverFunction;
+import de.uka.ilkd.key.mcp.operation.OperationTracker;
 import de.uka.ilkd.key.proof.Proof;
 import de.uka.ilkd.key.speclang.Contract;
 import de.uka.ilkd.key.util.KeYTypeUtil;
@@ -26,6 +27,7 @@ public class McpSession {
     private KeYEnvironment<?> environment;
     private final Map<String, Contract> contracts = new LinkedHashMap<>();
     private final Map<String, Proof> proofs = new LinkedHashMap<>();
+    private final OperationTracker operationTracker = new OperationTracker();
     private int proofCounter;
 
     public McpSession(String id) {
@@ -109,6 +111,10 @@ public class McpSession {
     public String nextProofId(String contractName) {
         proofCounter++;
         return "proof_" + proofCounter + "_" + sanitize(contractName);
+    }
+
+    public OperationTracker getOperationTracker() {
+        return operationTracker;
     }
 
     /**

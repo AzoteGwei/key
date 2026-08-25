@@ -115,4 +115,53 @@ class KeyMcpServerTest {
         List<?> contracts = (List<?>) contractsResult.get("contracts");
         assertThat(contracts).hasSizeGreaterThanOrEqualTo(2);
     }
+
+    @Test
+    void proofAutoForAddContract() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+        server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"key_project_load\",\"arguments\":{\"location\":\"key.core.example/example\"}}}");
+        server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"key_contracts_list\",\"arguments\":{}}}");
+        TestTransport transport = (TestTransport) server.transport;
+
+        Map<String, Object> contractsResponse = Json.parseObject(transport.getSentMessages().get(2));
+        assertNoError(contractsResponse);
+        Map<String, Object> contractsResult = (Map<String, Object>) contractsResponse.get("result");
+        List<?> contracts = (List<?>) contractsResult.get("contracts");
+        String contractId = null;
+        for (Object c : contracts) {
+            Map<String, Object> contract = (Map<String, Object>) c;
+            String display = (String) contract.get("displayName");
+            if ((display != null && display.contains("add")) || (contract.get("targetName").toString().contains("add"))) {
+                contractId = (String) contract.get("contractId");
+                break;
+            }
+        }
+        assertThat(contractId).isNotNull();
+
+        String auto = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_auto\",\"arguments\":{\"contractId\":\"" + contractId + "\",\"timeoutMs\":30000,\"maxSteps\":10000,\"async\":true}}}";
+        server.handleMessage(auto);
+        Map<String, Object> autoResponse = Json.parseObject(transport.getSentMessages().get(3));
+        assertNoError(autoResponse);
+        Map<String, Object> autoResult = (Map<String, Object>) autoResponse.get("result");
+        String operationId = (String) autoResult.get("operationId");
+
+        String wait = "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"key_operation_wait\",\"arguments\":{\"operationId\":\"" + operationId + "\",\"timeoutMs\":35000}}}";
+        server.handleMessage(wait);
+        Map<String, Object> waitResponse = Json.parseObject(transport.getSentMessages().get(4));
+        assertNoError(waitResponse);
+        Map<String, Object> waitResult = (Map<String, Object>) waitResponse.get("result");
+        assertThat(waitResult.get("state")).isEqualTo("completed");
+
+        List<?> events = (List<?>) waitResult.get("events");
+        Map<String, Object> completed = null;
+        for (Object e : events) {
+            Map<String, Object> event = (Map<String, Object>) e;
+            if ("completed".equals(event.get("type"))) {
+                completed = event;
+            }
+        }
+        assertThat(completed).isNotNull();
+        assertThat(completed.get("closed")).isEqualTo(true);
+    }
 }

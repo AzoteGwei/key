@@ -7,12 +7,20 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import de.uka.ilkd.key.control.KeYEnvironment;
 import de.uka.ilkd.key.mcp.json.Json;
+import de.uka.ilkd.key.mcp.operation.Operation;
+import de.uka.ilkd.key.mcp.operation.Operation.State;
 import de.uka.ilkd.key.mcp.session.McpSession;
+import de.uka.ilkd.key.proof.Proof;
+import de.uka.ilkd.key.proof.init.ProofInputException;
 import de.uka.ilkd.key.proof.io.ProblemLoaderException;
+import de.uka.ilkd.key.settings.ProofSettings;
 import de.uka.ilkd.key.speclang.Contract;
+import de.uka.ilkd.key.strategy.StrategyProperties;
 
 /**
  * Registry for MCP tools backed by a KeY session.
@@ -33,6 +41,11 @@ public class McpToolRegistry {
         tools.add(sessionDispose());
         tools.add(projectLoad());
         tools.add(contractsList());
+        tools.add(proofCreate());
+        tools.add(proofAuto());
+        tools.add(proofStatus());
+        tools.add(operationWait());
+        tools.add(operationCancel());
         return tools;
     }
 
@@ -43,6 +56,11 @@ public class McpToolRegistry {
         case "key_session_dispose" -> handleSessionDispose(params);
         case "key_project_load" -> handleProjectLoad(params);
         case "key_contracts_list" -> handleContractsList(params);
+        case "key_proof_create" -> handleProofCreate(params);
+        case "key_proof_auto" -> handleProofAuto(params);
+        case "key_proof_status" -> handleProofStatus(params);
+        case "key_operation_wait" -> handleOperationWait(params);
+        case "key_operation_cancel" -> handleOperationCancel(params);
         default -> throw new IllegalArgumentException("Tool not implemented: " + name);
         };
     }
@@ -148,6 +166,297 @@ public class McpToolRegistry {
             list.add(item);
         }
         return Map.of("contracts", list);
+    }
+
+    private Map<String, Object> proofCreate() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_proof_create");
+        schema.put("description", "Create a proof for a contract without starting auto mode.");
+        schema.put("inputSchema", Map.of("type", "object",
+            "properties", Map.of("contractId", Map.of("type", "string")),
+            "required", List.of("contractId")));
+        return schema;
+    }
+
+    private Map<String, Object> proofAuto() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_proof_auto");
+        schema.put("description", "Create a proof for a contract and run KeY auto mode.");
+        Map<String, Object> properties = Json.object();
+        properties.put("contractId", Map.of("type", "string"));
+        properties.put("timeoutMs", Map.of("type", "integer", "minimum", 1000));
+        properties.put("maxSteps", Map.of("type", "integer", "minimum", 1));
+        properties.put("strategyOptions", Map.of("type", "object"));
+        properties.put("async", Map.of("type", "boolean", "default", true));
+        schema.put("inputSchema", Map.of("type", "object", "properties", properties,
+            "required", List.of("contractId", "timeoutMs", "maxSteps")));
+        return schema;
+    }
+
+    private Map<String, Object> proofStatus() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_proof_status");
+        schema.put("description", "Get the status of a proof.");
+        schema.put("inputSchema", Map.of("type", "object",
+            "properties", Map.of("proofId", Map.of("type", "string")),
+            "required", List.of("proofId")));
+        return schema;
+    }
+
+    private Map<String, Object> operationWait() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_operation_wait");
+        schema.put("description", "Poll events for a long-running operation.");
+        Map<String, Object> properties = Json.object();
+        properties.put("operationId", Map.of("type", "string"));
+        properties.put("timeoutMs", Map.of("type", "integer", "default", 30000));
+        schema.put("inputSchema", Map.of("type", "object", "properties", properties,
+            "required", List.of("operationId")));
+        return schema;
+    }
+
+    private Map<String, Object> operationCancel() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_operation_cancel");
+        schema.put("description", "Cancel a long-running operation.");
+        schema.put("inputSchema", Map.of("type", "object",
+            "properties", Map.of("operationId", Map.of("type", "string")),
+            "required", List.of("operationId")));
+        return schema;
+    }
+
+    private Map<String, Object> handleProofCreate(Map<String, Object> params) {
+        String contractId = (String) params.get("contractId");
+        Proof proof = createProof(contractId);
+        String proofId = session.nextProofId(contractId);
+        session.registerProof(proofId, proof);
+
+        Map<String, Object> result = Json.object();
+        result.put("proofId", proofId);
+        result.put("status", "created");
+        result.put("openGoals", proof.openGoals().size());
+        return result;
+    }
+
+    private Map<String, Object> handleProofAuto(Map<String, Object> params) {
+        String contractId = (String) params.get("contractId");
+        long timeoutMs = longValue(params.get("timeoutMs"), config.defaultTimeoutMs());
+        long maxSteps = longValue(params.get("maxSteps"), config.defaultMaxSteps());
+        Object strategyOptions = params.get("strategyOptions");
+        boolean async = boolValue(params.get("async"), true);
+
+        Proof proof = createProof(contractId);
+        String proofId = session.nextProofId(contractId);
+        session.registerProof(proofId, proof);
+
+        configureStrategy(proof, maxSteps, strategyOptions);
+
+        Operation operation = session.getOperationTracker().start(proofId, "proof_auto");
+        Thread worker = new Thread(() -> runAutoMode(operation, proof, timeoutMs), "key-proof-auto-" + operation.getId());
+        operation.setWorkerThread(worker);
+        worker.start();
+
+        if (async) {
+            Map<String, Object> result = Json.object();
+            result.put("proofId", proofId);
+            result.put("operationId", operation.getId());
+            result.put("status", "running");
+            return result;
+        } else {
+            try {
+                worker.join(timeoutMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new McpToolException(-32603, "Interrupted while waiting for proof", e.getMessage());
+            }
+            return statusOf(operation);
+        }
+    }
+
+    private Map<String, Object> handleProofStatus(Map<String, Object> params) {
+        String proofId = (String) params.get("proofId");
+        Proof proof = session.getProof(proofId);
+        if (proof == null) {
+            throw new McpToolException(-32002, "Proof not found: " + proofId, null);
+        }
+        Map<String, Object> result = Json.object();
+        result.put("proofId", proofId);
+        result.put("closed", proof.openGoals().isEmpty());
+        result.put("openGoals", proof.openGoals().size());
+        result.put("usedSteps", proof.countNodes());
+        return result;
+    }
+
+    private Map<String, Object> handleOperationWait(Map<String, Object> params) {
+        String operationId = (String) params.get("operationId");
+        long waitTimeoutMs = longValue(params.get("timeoutMs"), 30000L);
+        Operation operation = session.getOperationTracker().get(operationId);
+        if (operation == null) {
+            throw new McpToolException(-32003, "Operation not found: " + operationId, null);
+        }
+        try {
+            operation.await(waitTimeoutMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return statusOf(operation);
+    }
+
+    private Map<String, Object> handleOperationCancel(Map<String, Object> params) {
+        String operationId = (String) params.get("operationId");
+        Operation operation = session.getOperationTracker().get(operationId);
+        if (operation == null) {
+            throw new McpToolException(-32003, "Operation not found: " + operationId, null);
+        }
+        Thread worker = operation.getWorkerThread();
+        if (worker != null && worker.isAlive()) {
+            worker.interrupt();
+        }
+        operation.addCancelledEvent();
+        return Map.of("cancelled", true);
+    }
+
+    private Proof createProof(String contractId) {
+        ensureEnvironment();
+        Contract contract = session.getContract(contractId);
+        if (contract == null) {
+            throw new McpToolException(-32602, "Unknown contract: " + contractId, null);
+        }
+        try {
+            return session.getEnvironment().createProof(contract.createProofObl(
+                session.getEnvironment().getInitConfig(), contract));
+        } catch (ProofInputException e) {
+            throw new McpToolException(-32603, "Failed to create proof: " + e.getMessage(), e.getMessage());
+        }
+    }
+
+    private void configureStrategy(Proof proof, long maxSteps, Object strategyOptions) {
+        StrategyProperties sp = proof.getSettings().getStrategySettings().getActiveStrategyProperties();
+        sp.setProperty(StrategyProperties.METHOD_OPTIONS_KEY, StrategyProperties.METHOD_CONTRACT);
+        sp.setProperty(StrategyProperties.DEP_OPTIONS_KEY, StrategyProperties.DEP_ON);
+        sp.setProperty(StrategyProperties.QUERY_OPTIONS_KEY, StrategyProperties.QUERY_ON);
+        sp.setProperty(StrategyProperties.NON_LIN_ARITH_OPTIONS_KEY, StrategyProperties.NON_LIN_ARITH_DEF_OPS);
+        sp.setProperty(StrategyProperties.STOPMODE_OPTIONS_KEY, StrategyProperties.STOPMODE_NONCLOSE);
+
+        if (strategyOptions instanceof Map<?, ?> options) {
+            for (Map.Entry<?, ?> entry : options.entrySet()) {
+                sp.setProperty(entry.getKey().toString(), entry.getValue().toString());
+            }
+        }
+
+        proof.getSettings().getStrategySettings().setActiveStrategyProperties(sp);
+        proof.getSettings().getStrategySettings().setMaxSteps((int) maxSteps);
+        ProofSettings.DEFAULT_SETTINGS.getStrategySettings().setMaxSteps((int) maxSteps);
+        ProofSettings.DEFAULT_SETTINGS.getStrategySettings().setActiveStrategyProperties(sp);
+        proof.setActiveStrategy(proof.getServices().getProfile().getDefaultStrategyFactory().create(proof, sp));
+    }
+
+    private void runAutoMode(Operation operation, Proof proof, long timeoutMs) {
+        Timer timer = new Timer();
+        timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                Thread worker = operation.getWorkerThread();
+                if (worker != null && worker.isAlive()) {
+                    worker.interrupt();
+                }
+                operation.addTimeoutEvent();
+            }
+        }, timeoutMs);
+
+        ProgressWatcher watcher = new ProgressWatcher(operation, proof);
+        watcher.start();
+
+        long start = System.currentTimeMillis();
+        try {
+            session.getEnvironment().getUi().getProofControl().startAndWaitForAutoMode(proof);
+            if (operation.getState() == Operation.State.RUNNING) {
+                long duration = System.currentTimeMillis() - start;
+                operation.addCompletedEvent(proof.openGoals().isEmpty(), proof.openGoals().size(),
+                    proof.countNodes(), duration);
+            }
+        } catch (Exception e) {
+            if (operation.getState() == Operation.State.RUNNING) {
+                if (Thread.currentThread().isInterrupted()) {
+                    operation.addTimeoutEvent();
+                } else {
+                    operation.addErrorEvent(e.getMessage());
+                }
+            }
+        } finally {
+            timer.cancel();
+            watcher.stopWatching();
+        }
+    }
+
+    private Map<String, Object> statusOf(Operation operation) {
+        Map<String, Object> result = Json.object();
+        result.put("operationId", operation.getId());
+        result.put("state", operation.getState().name().toLowerCase());
+        result.put("proofId", operation.getProofId());
+        result.put("events", operation.getEvents());
+        if (operation.getErrorMessage() != null) {
+            result.put("errorMessage", operation.getErrorMessage());
+        }
+        return result;
+    }
+
+    private void ensureEnvironment() {
+        if (session.getEnvironment() == null) {
+            throw new McpToolException(-32603, "No project loaded. Call key_project_load first.", null);
+        }
+    }
+
+    private static long longValue(Object value, long defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number n) {
+            return n.longValue();
+        }
+        return Long.parseLong(value.toString());
+    }
+
+    private static boolean boolValue(Object value, boolean defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(value.toString());
+    }
+
+    private static class ProgressWatcher {
+        private final Operation operation;
+        private final Proof proof;
+        private volatile boolean stopped;
+        private final Thread thread;
+
+        ProgressWatcher(Operation operation, Proof proof) {
+            this.operation = operation;
+            this.proof = proof;
+            this.thread = new Thread(this::watch, "key-progress-watcher");
+        }
+
+        void start() {
+            thread.start();
+        }
+
+        void stopWatching() {
+            stopped = true;
+            thread.interrupt();
+        }
+
+        private void watch() {
+            while (!stopped && operation.getState() == Operation.State.RUNNING) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    break;
+                }
+                if (!stopped && operation.getState() == Operation.State.RUNNING) {
+                    operation.addProgressEvent(proof.countNodes(), proof.openGoals().size());
+                }
+            }
+        }
     }
 
     private static List<Path> toPathList(Object value) {
