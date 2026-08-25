@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: GPL-2.0-only */
 package de.uka.ilkd.key.mcp;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,10 +23,15 @@ import de.uka.ilkd.key.nparser.ParsingFacade;
 import de.uka.ilkd.key.proof.Goal;
 import de.uka.ilkd.key.proof.Proof;
 import de.uka.ilkd.key.proof.init.ProofInputException;
+import de.uka.ilkd.key.proof.io.OutputStreamProofSaver;
 import de.uka.ilkd.key.proof.io.ProblemLoaderException;
 import de.uka.ilkd.key.scripts.ProofScriptEngine;
 import de.uka.ilkd.key.scripts.ScriptException;
+import de.uka.ilkd.key.settings.DefaultSMTSettings;
+import de.uka.ilkd.key.settings.ProofIndependentSMTSettings;
 import de.uka.ilkd.key.settings.ProofSettings;
+import de.uka.ilkd.key.smt.SMTSettings;
+import de.uka.ilkd.key.smt.SmtLib2Translator;
 import de.uka.ilkd.key.speclang.Contract;
 import de.uka.ilkd.key.strategy.StrategyProperties;
 
@@ -57,6 +64,9 @@ public class McpToolRegistry {
         tools.add(proofRuleApply());
         tools.add(proofScriptRun());
         tools.add(proofUndo());
+        tools.add(proofExport());
+        tools.add(proofSmt());
+        tools.add(proofCounterexample());
         return tools;
     }
 
@@ -77,6 +87,9 @@ public class McpToolRegistry {
         case "key_proof_rule_apply" -> handleProofRuleApply(params);
         case "key_proof_script_run" -> handleProofScriptRun(params);
         case "key_proof_undo" -> handleProofUndo(params);
+        case "key_proof_export" -> handleProofExport(params);
+        case "key_proof_smt" -> handleProofSmt(params);
+        case "key_proof_counterexample" -> handleProofCounterexample(params);
         default -> throw new IllegalArgumentException("Tool not implemented: " + name);
         };
     }
@@ -300,6 +313,39 @@ public class McpToolRegistry {
         return schema;
     }
 
+    private Map<String, Object> proofExport() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_proof_export");
+        schema.put("description", "Export a proof as a KeY .proof file or as a JSON tree.");
+        Map<String, Object> properties = Json.object();
+        properties.put("proofId", Map.of("type", "string"));
+        properties.put("format", Map.of("type", "string", "enum", List.of("proof", "json"), "default", "proof"));
+        properties.put("path", Map.of("type", "string"));
+        schema.put("inputSchema", Map.of("type", "object", "properties", properties,
+            "required", List.of("proofId")));
+        return schema;
+    }
+
+    private Map<String, Object> proofSmt() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_proof_smt");
+        schema.put("description", "Translate the first open goal of a proof to SMT-LIB format.");
+        schema.put("inputSchema", Map.of("type", "object",
+            "properties", Map.of("proofId", Map.of("type", "string")),
+            "required", List.of("proofId")));
+        return schema;
+    }
+
+    private Map<String, Object> proofCounterexample() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_proof_counterexample");
+        schema.put("description", "Get a counterexample or error trace for a proof, if available.");
+        schema.put("inputSchema", Map.of("type", "object",
+            "properties", Map.of("proofId", Map.of("type", "string")),
+            "required", List.of("proofId")));
+        return schema;
+    }
+
     private Map<String, Object> handleProofCreate(Map<String, Object> params) {
         String contractId = (String) params.get("contractId");
         Proof proof = createProof(contractId);
@@ -479,6 +525,96 @@ public class McpToolRegistry {
         result.put("undone", true);
         result.put("openGoals", proof.openGoals().size());
         return result;
+    }
+
+    private Map<String, Object> handleProofExport(Map<String, Object> params) {
+        String proofId = (String) params.get("proofId");
+        String format = (String) params.getOrDefault("format", "proof");
+        String path = (String) params.get("path");
+        Proof proof = requireProof(proofId);
+
+        Map<String, Object> result = Json.object();
+        result.put("proofId", proofId);
+        result.put("format", format);
+
+        switch (format) {
+        case "proof": {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try {
+                new OutputStreamProofSaver(proof).save(config.workspace(), baos);
+                String content = baos.toString(java.nio.charset.StandardCharsets.UTF_8);
+                if (path != null) {
+                    Path target = PathValidator.resolveAndValidate(path, config.workspace(), config.allowedPaths());
+                    java.nio.file.Files.writeString(target, content);
+                    result.put("path", target.toString());
+                } else {
+                    result.put("content", content);
+                }
+            } catch (IOException e) {
+                throw new McpToolException(-32603, "Failed to export proof: " + e.getMessage(), e.getMessage());
+            }
+            break;
+        }
+        case "json": {
+            result.put("tree", proofTreeJson(proof.root()));
+            break;
+        }
+        default:
+            throw new McpToolException(-32602, "Unknown export format: " + format, null);
+        }
+        return result;
+    }
+
+    private Map<String, Object> handleProofSmt(Map<String, Object> params) {
+        String proofId = (String) params.get("proofId");
+        Proof proof = requireProof(proofId);
+        if (proof.openGoals().isEmpty()) {
+            throw new McpToolException(-32603, "Proof has no open goals", null);
+        }
+        Goal goal = proof.openGoals().head();
+
+        SMTSettings settings = new DefaultSMTSettings(proof.getSettings().getSMTSettings(),
+            ProofIndependentSMTSettings.getDefaultSettingsData(),
+            proof.getSettings().getNewSMTSettings(), proof);
+
+        try {
+            SmtLib2Translator translator = new SmtLib2Translator(new String[0], new String[0], null);
+            String text = translator.translateProblem(goal.sequent(), proof.getServices(), settings).toString();
+            Map<String, Object> result = Json.object();
+            result.put("proofId", proofId);
+            result.put("smt", text);
+            return result;
+        } catch (Exception e) {
+            throw new McpToolException(-32603, "SMT translation failed: " + e.getMessage(), e.getMessage());
+        }
+    }
+
+    private Map<String, Object> handleProofCounterexample(Map<String, Object> params) {
+        String proofId = (String) params.get("proofId");
+        Proof proof = requireProof(proofId);
+
+        Map<String, Object> result = Json.object();
+        result.put("proofId", proofId);
+        result.put("supported", false);
+        result.put("message",
+            "Counterexample extraction requires an explicitly enabled SMT solver and is not yet implemented in this version.");
+        result.put("openGoals", proof.openGoals().size());
+        return result;
+    }
+
+    private Map<String, Object> proofTreeJson(de.uka.ilkd.key.proof.Node node) {
+        Map<String, Object> item = Json.object();
+        item.put("serialNr", node.serialNr());
+        item.put("sequent", node.sequent().toString());
+        if (node.getAppliedRuleApp() != null) {
+            item.put("rule", node.getAppliedRuleApp().rule().name().toString());
+        }
+        List<Map<String, Object>> children = new ArrayList<>();
+        for (de.uka.ilkd.key.proof.Node child : node.children()) {
+            children.add(proofTreeJson(child));
+        }
+        item.put("children", children);
+        return item;
     }
 
     private Proof requireProof(String proofId) {
