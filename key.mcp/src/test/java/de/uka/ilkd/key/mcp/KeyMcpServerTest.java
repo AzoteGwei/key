@@ -26,8 +26,7 @@ class KeyMcpServerTest {
     }
 
     private void initialize(KeyMcpServer server) {
-        server.handleMessage(
-            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}");
+        server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}");
     }
 
     private static void assertNoError(Map<String, Object> response) {
@@ -36,20 +35,27 @@ class KeyMcpServerTest {
         }
     }
 
+    private Map<String, Object> callTool(KeyMcpServer server, int id, String name, Map<String, Object> args) {
+        String message = "{\"jsonrpc\":\"2.0\",\"id\":" + id
+            + ",\"method\":\"tools/call\",\"params\":{\"name\":\"" + name
+            + "\",\"arguments\":" + Json.stringify(args) + "}}";
+        server.handleMessage(message);
+        TestTransport transport = (TestTransport) server.transport;
+        Map<String, Object> response = Json.parseObject(transport.getSentMessages().get(transport.getSentMessages().size() - 1));
+        assertNoError(response);
+        Map<String, Object> result = (Map<String, Object>) response.get("result");
+        assertThat(result.get("content")).isNotNull();
+        return (Map<String, Object>) result.get("structuredContent");
+    }
+
     private String loadExampleProject(KeyMcpServer server) {
-        server.handleMessage(
-            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"key_project_load\",\"arguments\":{\"location\":\"key.core.example/example\"}}}");
-        return "key_project_load";
+        Map<String, Object> result = callTool(server, 2, "key_project_load", Map.of("location", "key.core.example/example"));
+        assertThat(result.get("success")).isEqualTo(true);
+        return "key.core.example/example";
     }
 
     private Map<String, Object> contractsResult(KeyMcpServer server) {
-        server.handleMessage(
-            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"key_contracts_list\",\"arguments\":{}}}");
-        TestTransport transport = (TestTransport) server.transport;
-        Map<String, Object> contractsResponse = Json.parseObject(
-            transport.getSentMessages().get(transport.getSentMessages().size() - 1));
-        assertNoError(contractsResponse);
-        return (Map<String, Object>) contractsResponse.get("result");
+        return callTool(server, 3, "key_contracts_list", Map.of());
     }
 
     private String findContractId(List<?> contracts, String targetSubstring) {
@@ -84,8 +90,7 @@ class KeyMcpServerTest {
     void initializeTwiceFails() {
         KeyMcpServer server = createServer();
         initialize(server);
-        server.handleMessage(
-            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":{}}");
+        server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":{}}");
         TestTransport transport = (TestTransport) server.transport;
 
         assertThat(transport.getSentMessages()).hasSize(2);
@@ -112,38 +117,21 @@ class KeyMcpServerTest {
     void toolsListReturnsTools() {
         KeyMcpServer server = createServer();
         initialize(server);
-        server.handleMessage(
-            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
+        server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
         TestTransport transport = (TestTransport) server.transport;
 
         Map<String, Object> response = Json.parseObject(transport.getSentMessages().get(1));
         Map<String, Object> result = (Map<String, Object>) response.get("result");
         List<?> tools = (List<?>) result.get("tools");
-        assertThat(tools).hasSizeGreaterThanOrEqualTo(5);
+        assertThat(tools).hasSizeGreaterThanOrEqualTo(15);
     }
 
     @Test
     void projectLoadAndContractsList() {
         KeyMcpServer server = createServer();
         initialize(server);
-        String load =
-            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"key_project_load\",\"arguments\":{\"location\":\"key.core.example/example\"}}}";
-        server.handleMessage(load);
-        server.handleMessage(
-            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"key_contracts_list\",\"arguments\":{}}}");
-        TestTransport transport = (TestTransport) server.transport;
-
-        assertThat(transport.getSentMessages()).hasSize(3);
-        Map<String, Object> loadResponse = Json.parseObject(transport.getSentMessages().get(1));
-        assertNoError(loadResponse);
-        Map<String, Object> loadResult = (Map<String, Object>) loadResponse.get("result");
-        assertThat(loadResult.get("success")).isEqualTo(true);
-        assertThat((Integer) loadResult.get("contractCount")).isGreaterThan(0);
-
-        Map<String, Object> contractsResponse =
-            Json.parseObject(transport.getSentMessages().get(2));
-        assertNoError(contractsResponse);
-        Map<String, Object> contractsResult = (Map<String, Object>) contractsResponse.get("result");
+        loadExampleProject(server);
+        Map<String, Object> contractsResult = contractsResult(server);
         List<?> contracts = (List<?>) contractsResult.get("contracts");
         assertThat(contracts).hasSizeGreaterThanOrEqualTo(2);
     }
@@ -158,23 +146,17 @@ class KeyMcpServerTest {
         String contractId = findContractId(contracts, "add");
         assertThat(contractId).isNotNull();
 
-        String auto =
-            "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_auto\",\"arguments\":{\"contractId\":\""
-                + contractId + "\",\"timeoutMs\":30000,\"maxSteps\":10000,\"async\":true}}}";
-        server.handleMessage(auto);
-        TestTransport transport = (TestTransport) server.transport;
-        Map<String, Object> autoResponse = Json.parseObject(transport.getSentMessages().get(3));
-        assertNoError(autoResponse);
-        Map<String, Object> autoResult = (Map<String, Object>) autoResponse.get("result");
+        Map<String, Object> autoResult = callTool(server, 4, "key_proof_auto", Map.of(
+            "contractId", contractId,
+            "timeoutMs", 30000,
+            "maxSteps", 10000,
+            "async", true));
         String operationId = (String) autoResult.get("operationId");
+        assertThat(operationId).isNotNull();
 
-        String wait =
-            "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"key_operation_wait\",\"arguments\":{\"operationId\":\""
-                + operationId + "\",\"timeoutMs\":35000}}}";
-        server.handleMessage(wait);
-        Map<String, Object> waitResponse = Json.parseObject(transport.getSentMessages().get(4));
-        assertNoError(waitResponse);
-        Map<String, Object> waitResult = (Map<String, Object>) waitResponse.get("result");
+        Map<String, Object> waitResult = callTool(server, 5, "key_operation_wait", Map.of(
+            "operationId", operationId,
+            "timeoutMs", 35000));
         assertThat(waitResult.get("state")).isEqualTo("completed");
 
         List<?> events = (List<?>) waitResult.get("events");
@@ -199,42 +181,19 @@ class KeyMcpServerTest {
         String contractId = findContractId(contracts, "sub");
         assertThat(contractId).isNotNull();
 
-        String create =
-            "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_create\",\"arguments\":{\"contractId\":\""
-                + contractId + "\"}}}";
-        server.handleMessage(create);
-        TestTransport transport = (TestTransport) server.transport;
-        Map<String, Object> createResponse = Json.parseObject(transport.getSentMessages().get(3));
-        assertNoError(createResponse);
-        Map<String, Object> createResult = (Map<String, Object>) createResponse.get("result");
+        Map<String, Object> createResult = callTool(server, 4, "key_proof_create", Map.of("contractId", contractId));
         String proofId = (String) createResult.get("proofId");
         assertThat((Integer) createResult.get("openGoals")).isGreaterThan(0);
 
-        String goals =
-            "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_goals_list\",\"arguments\":{\"proofId\":\""
-                + proofId + "\"}}}";
-        server.handleMessage(goals);
-        Map<String, Object> goalsResponse = Json.parseObject(transport.getSentMessages().get(4));
-        assertNoError(goalsResponse);
-        Map<String, Object> goalsResult = (Map<String, Object>) goalsResponse.get("result");
+        Map<String, Object> goalsResult = callTool(server, 5, "key_proof_goals_list", Map.of("proofId", proofId));
         List<?> openGoals = (List<?>) goalsResult.get("goals");
         assertThat(openGoals).isNotEmpty();
         int goalId = ((Number) ((Map<String, Object>) openGoals.get(0)).get("goalId")).intValue();
 
-        String goalGet =
-            "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_goal_get\",\"arguments\":{\"proofId\":\""
-                + proofId + "\",\"goalId\":" + goalId + "}}}";
-        server.handleMessage(goalGet);
-        Map<String, Object> goalResponse = Json.parseObject(transport.getSentMessages().get(5));
-        assertNoError(goalResponse);
+        Map<String, Object> goalResult = callTool(server, 6, "key_proof_goal_get", Map.of("proofId", proofId, "goalId", goalId));
+        assertThat((String) goalResult.get("sequent")).isNotBlank();
 
-        String scriptRun =
-            "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_script_run\",\"arguments\":{\"proofId\":\""
-                + proofId + "\",\"script\":\"auto;\"}}}";
-        server.handleMessage(scriptRun);
-        Map<String, Object> scriptResponse = Json.parseObject(transport.getSentMessages().get(6));
-        assertNoError(scriptResponse);
-        Map<String, Object> scriptResult = (Map<String, Object>) scriptResponse.get("result");
+        Map<String, Object> scriptResult = callTool(server, 7, "key_proof_script_run", Map.of("proofId", proofId, "script", "auto;"));
         assertThat(scriptResult.get("scriptExecuted")).isEqualTo(true);
     }
 
@@ -248,45 +207,47 @@ class KeyMcpServerTest {
         String contractId = findContractId(contracts, "sub");
         assertThat(contractId).isNotNull();
 
-        String create =
-            "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_create\",\"arguments\":{\"contractId\":\""
-                + contractId + "\"}}}";
-        server.handleMessage(create);
-        TestTransport transport = (TestTransport) server.transport;
-        Map<String, Object> createResponse = Json.parseObject(transport.getSentMessages().get(3));
-        assertNoError(createResponse);
-        Map<String, Object> createResult = (Map<String, Object>) createResponse.get("result");
+        Map<String, Object> createResult = callTool(server, 4, "key_proof_create", Map.of("contractId", contractId));
         String proofId = (String) createResult.get("proofId");
 
-        String exportProof =
-            "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_export\",\"arguments\":{\"proofId\":\""
-                + proofId + "\",\"format\":\"proof\"}}}";
-        server.handleMessage(exportProof);
-        Map<String, Object> exportProofResponse =
-            Json.parseObject(transport.getSentMessages().get(4));
-        assertNoError(exportProofResponse);
-        Map<String, Object> exportProofResult =
-            (Map<String, Object>) exportProofResponse.get("result");
+        Map<String, Object> exportProofResult = callTool(server, 5, "key_proof_export", Map.of("proofId", proofId, "format", "proof"));
         assertThat((String) exportProofResult.get("content")).contains("\\proof");
 
-        String exportJson =
-            "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_export\",\"arguments\":{\"proofId\":\""
-                + proofId + "\",\"format\":\"json\"}}}";
-        server.handleMessage(exportJson);
-        Map<String, Object> exportJsonResponse =
-            Json.parseObject(transport.getSentMessages().get(5));
-        assertNoError(exportJsonResponse);
-        Map<String, Object> exportJsonResult =
-            (Map<String, Object>) exportJsonResponse.get("result");
+        Map<String, Object> exportJsonResult = callTool(server, 6, "key_proof_export", Map.of("proofId", proofId, "format", "json"));
         assertThat(exportJsonResult.get("tree")).isNotNull();
 
-        String smt =
-            "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_smt\",\"arguments\":{\"proofId\":\""
-                + proofId + "\"}}}";
-        server.handleMessage(smt);
-        Map<String, Object> smtResponse = Json.parseObject(transport.getSentMessages().get(6));
-        assertNoError(smtResponse);
-        Map<String, Object> smtResult = (Map<String, Object>) smtResponse.get("result");
+        Map<String, Object> smtResult = callTool(server, 7, "key_proof_smt", Map.of("proofId", proofId));
         assertThat((String) smtResult.get("smt")).contains("assert");
+    }
+
+    @Test
+    void resourcesReadAfterProofCreate() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+        loadExampleProject(server);
+        Map<String, Object> contractsResult = contractsResult(server);
+        List<?> contracts = (List<?>) contractsResult.get("contracts");
+        String contractId = findContractId(contracts, "sub");
+        assertThat(contractId).isNotNull();
+
+        Map<String, Object> createResult = callTool(server, 4, "key_proof_create", Map.of("contractId", contractId));
+        String proofId = (String) createResult.get("proofId");
+
+        server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"resources/list\",\"params\":{}}");
+        TestTransport transport = (TestTransport) server.transport;
+        Map<String, Object> listResponse = Json.parseObject(transport.getSentMessages().get(transport.getSentMessages().size() - 1));
+        Map<String, Object> listResult = (Map<String, Object>) listResponse.get("result");
+        List<?> resources = (List<?>) listResult.get("resources");
+        assertThat(resources).isNotEmpty();
+
+        String uri = "proof://" + proofId + "/status";
+        server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"resources/read\",\"params\":{\"uri\":\"" + uri + "\"}}");
+        Map<String, Object> readResponse = Json.parseObject(transport.getSentMessages().get(transport.getSentMessages().size() - 1));
+        assertNoError(readResponse);
+        Map<String, Object> readResult = (Map<String, Object>) readResponse.get("result");
+        List<?> contents = (List<?>) readResult.get("contents");
+        assertThat(contents).isNotEmpty();
+        Map<String, Object> content = (Map<String, Object>) contents.get(0);
+        assertThat((String) content.get("text")).contains("closed");
     }
 }

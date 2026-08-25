@@ -145,7 +145,10 @@ public class KeyMcpServer {
         Map<String, Object> argumentsMap =
             (arguments instanceof Map) ? (Map<String, Object>) arguments : Map.of();
         try {
-            Map<String, Object> result = toolRegistry.execute(name, argumentsMap);
+            Map<String, Object> toolOutput = toolRegistry.execute(name, argumentsMap);
+            Map<String, Object> result = Json.object();
+            result.put("content", List.of(Map.of("type", "text", "text", Json.stringify(toolOutput))));
+            result.put("structuredContent", toolOutput);
             return JsonRpcCodec.encodeSuccess(request.id(), result);
         } catch (McpSecurityException e) {
             return JsonRpcCodec.encodeError(request.id(), -32001, e.getMessage(), null);
