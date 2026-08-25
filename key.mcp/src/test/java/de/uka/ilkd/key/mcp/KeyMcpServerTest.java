@@ -221,6 +221,24 @@ class KeyMcpServerTest {
     }
 
     @Test
+    void counterexampleWithoutSolverReturnsGuidance() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+        loadExampleProject(server);
+        Map<String, Object> contractsResult = contractsResult(server);
+        List<?> contracts = (List<?>) contractsResult.get("contracts");
+        String contractId = findContractId(contracts, "sub");
+        assertThat(contractId).isNotNull();
+
+        Map<String, Object> createResult = callTool(server, 4, "key_proof_create", Map.of("contractId", contractId));
+        String proofId = (String) createResult.get("proofId");
+
+        Map<String, Object> ceResult = callTool(server, 5, "key_proof_counterexample", Map.of("proofId", proofId));
+        assertThat(ceResult.get("supported")).isEqualTo(false);
+        assertThat((String) ceResult.get("message")).contains("KEY_MCP_SMT_SOLVERS");
+    }
+
+    @Test
     void resourcesReadAfterProofCreate() {
         KeyMcpServer server = createServer();
         initialize(server);

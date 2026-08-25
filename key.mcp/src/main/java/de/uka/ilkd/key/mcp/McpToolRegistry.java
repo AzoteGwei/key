@@ -29,8 +29,14 @@ import de.uka.ilkd.key.scripts.ScriptException;
 import de.uka.ilkd.key.settings.DefaultSMTSettings;
 import de.uka.ilkd.key.settings.ProofIndependentSMTSettings;
 import de.uka.ilkd.key.settings.ProofSettings;
+import de.uka.ilkd.key.smt.SMTProblem;
 import de.uka.ilkd.key.smt.SMTSettings;
+import de.uka.ilkd.key.smt.SMTSolver;
+import de.uka.ilkd.key.smt.SMTSolverResult;
 import de.uka.ilkd.key.smt.SmtLib2Translator;
+import de.uka.ilkd.key.smt.SolverLauncher;
+import de.uka.ilkd.key.smt.solvertypes.SolverType;
+import de.uka.ilkd.key.smt.solvertypes.SolverTypes;
 import de.uka.ilkd.key.speclang.Contract;
 import de.uka.ilkd.key.strategy.StrategyProperties;
 
@@ -288,11 +294,15 @@ public class McpToolRegistry {
     private Map<String, Object> proofRuleApply() {
         Map<String, Object> schema = Json.object();
         schema.put("name", "key_proof_rule_apply");
-        schema.put("description", "Apply a rule by name to the given goal.");
+        schema.put("description",
+            "Apply a rule by name to the given goal. Additional KeY proof-script options "
+                + "(on, formula, occ, matches, assumes, inst_*) can be passed via 'parameters'.");
         Map<String, Object> properties = Json.object();
         properties.put("proofId", Map.of("type", "string"));
         properties.put("goalId", Map.of("type", "integer"));
         properties.put("ruleName", Map.of("type", "string"));
+        properties.put("parameters", Map.of("type", "object",
+            "description", "Additional rule options, e.g. {\"on\": \"x + y\", \"occ\": 1}"));
         schema.put("inputSchema", Map.of("type", "object", "properties", properties,
             "required", List.of("proofId", "goalId", "ruleName")));
         return schema;
@@ -350,8 +360,12 @@ public class McpToolRegistry {
         Map<String, Object> schema = Json.object();
         schema.put("name", "key_proof_counterexample");
         schema.put("description", "Get a counterexample or error trace for a proof, if available.");
+        Map<String, Object> properties = Json.object();
+        properties.put("proofId", Map.of("type", "string"));
+        properties.put("solver", Map.of("type", "string",
+            "description", "Name of the SMT solver to use (default: first enabled solver)"));
         schema.put("inputSchema", Map.of("type", "object",
-            "properties", Map.of("proofId", Map.of("type", "string")),
+            "properties", properties,
             "required", List.of("proofId")));
         return schema;
     }
@@ -484,9 +498,19 @@ public class McpToolRegistry {
         String ruleName = (String) params.get("ruleName");
         Proof proof = requireProof(proofId);
 
-        String script = "select number=" + goalId + ";\nrule " + ruleName + ";";
+        StringBuilder script = new StringBuilder();
+        script.append("select number=").append(goalId).append(";\n");
+        script.append("rule ").append(ruleName);
+        Object parameters = params.get("parameters");
+        if (parameters instanceof Map<?, ?> options) {
+            for (Map.Entry<?, ?> entry : options.entrySet()) {
+                script.append(' ').append(entry.getKey().toString()).append('=')
+                    .append(scriptValue(entry.getValue()));
+            }
+        }
+        script.append(';');
         try {
-            executeScript(proof, script);
+            executeScript(proof, script.toString());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new McpToolException(-32603, "Interrupted", e.getMessage());
@@ -499,6 +523,7 @@ public class McpToolRegistry {
         result.put("proofId", proofId);
         result.put("goalId", goalId);
         result.put("ruleName", ruleName);
+        result.put("script", script.toString());
         result.put("applied", true);
         result.put("openGoals", proof.openGoals().size());
         return result;
@@ -588,9 +613,7 @@ public class McpToolRegistry {
         }
         Goal goal = proof.openGoals().head();
 
-        SMTSettings settings = new DefaultSMTSettings(proof.getSettings().getSMTSettings(),
-            ProofIndependentSMTSettings.getDefaultSettingsData(),
-            proof.getSettings().getNewSMTSettings(), proof);
+        SMTSettings settings = createSmtSettings(proof);
 
         try {
             SmtLib2Translator translator =
@@ -613,11 +636,89 @@ public class McpToolRegistry {
 
         Map<String, Object> result = Json.object();
         result.put("proofId", proofId);
-        result.put("supported", false);
-        result.put("message",
-            "Counterexample extraction requires an explicitly enabled SMT solver and is not yet implemented in this version.");
         result.put("openGoals", proof.openGoals().size());
+
+        if (proof.openGoals().isEmpty()) {
+            result.put("supported", false);
+            result.put("message", "Proof is closed; there is no goal to falsify.");
+            return result;
+        }
+
+        SolverType solverType = findCounterExampleSolver((String) params.get("solver"));
+        if (solverType == null) {
+            result.put("supported", false);
+            result.put("message",
+                "No SMT solver enabled. Set KEY_MCP_SMT_SOLVERS to a solver name (e.g. 'Z3_CE') and ensure the solver binary is installed.");
+            return result;
+        }
+
+        Goal goal = proof.openGoals().head();
+        SMTProblem problem = new SMTProblem(goal);
+        SolverLauncher launcher = new SolverLauncher(createSmtSettings(proof));
+        try {
+            launcher.launch(problem, proof.getServices(), solverType);
+        } catch (Exception e) {
+            throw new McpToolException(-32603,
+                "Failed to run SMT solver '" + solverType.getName() + "': " + e.getMessage(),
+                e.getMessage());
+        }
+
+        SMTSolverResult solverResult = problem.getFinalResult();
+        if (solverResult == null) {
+            result.put("supported", false);
+            result.put("message", "Solver produced no result.");
+            return result;
+        }
+
+        result.put("supported", true);
+        result.put("result", solverResult.isValid().name());
+        result.put("resultText", solverResult.toString());
+
+        if (solverResult.isValid() == SMTSolverResult.ThreeValuedTruth.FALSIFIABLE) {
+            for (SMTSolver solver : problem.getSolvers()) {
+                if (solver.getType() == solverType && solver.getSocket() != null
+                        && solver.getSocket().getQuery() != null) {
+                    var model = solver.getSocket().getQuery().getModel();
+                    if (model != null) {
+                        result.put("counterexample", model.toString());
+                        break;
+                    }
+                }
+            }
+            if (!result.containsKey("counterexample")) {
+                result.put("counterexample",
+                    "Sequent is falsifiable, but no model could be extracted from the solver output.");
+            }
+        }
         return result;
+    }
+
+    private SolverType findCounterExampleSolver(String requestedName) {
+        for (SolverType type : SolverTypes.getSolverTypes()) {
+            String name = type.getName();
+            boolean matchesRequest = requestedName == null
+                    ? (name.equalsIgnoreCase("Z3_CE") || name.equalsIgnoreCase("Z3"))
+                    : name.equalsIgnoreCase(requestedName);
+            if (matchesRequest && isSolverEnabled(name)) {
+                return type;
+            }
+        }
+        return null;
+    }
+
+    private boolean isSolverEnabled(String name) {
+        for (String enabled : config.allowedSmtSolvers()) {
+            if (enabled.equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static SMTSettings createSmtSettings(Proof proof) {
+        return new DefaultSMTSettings(proof.getSettings().getSMTSettings(),
+            ProofIndependentSMTSettings.getDefaultSettingsData(),
+            proof.getSettings().getNewSMTSettings(), proof);
     }
 
     private Map<String, Object> proofTreeJson(de.uka.ilkd.key.proof.Node node) {
@@ -663,6 +764,24 @@ public class McpToolRegistry {
         ProofScriptEngine engine = new ProofScriptEngine(proof);
         engine.setInitiallySelectedGoal(proof.openGoals().head());
         engine.execute(ui, script);
+    }
+
+    private static String scriptValue(Object value) {
+        if (value instanceof Number || value instanceof Boolean) {
+            return value.toString();
+        }
+        String text = value.toString();
+        StringBuilder sb = new StringBuilder(text.length() + 2);
+        sb.append('"');
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '"' || c == '\\') {
+                sb.append('\\');
+            }
+            sb.append(c);
+        }
+        sb.append('"');
+        return sb.toString();
     }
 
     private static int intValue(Object value) {
