@@ -1,0 +1,45 @@
+plugins {
+    id 'application'
+    alias(libs.plugins.shadow)
+}
+
+description = "MCP (Model Context Protocol) server for KeY"
+
+dependencies {
+    implementation project(":key.core")
+    implementation project(":key.util")
+
+    // Logging implementation used by SLF4J
+    implementation(libs.logback.classic)
+
+    // Lightweight command-line parsing for server configuration
+    implementation(libs.picocli)
+}
+
+application {
+    mainClass.set("de.uka.ilkd.key.mcp.KeyMcpServer")
+}
+
+run {
+    standardInput = System.in
+    standardOutput = System.out
+    // Allow the server to read from stdin in a Gradle run task.
+    // In production, run the shadow jar directly.
+}
+
+shadowJar {
+    archiveClassifier.set("all")
+    archiveBaseName.set("key-mcp")
+    filesMatching("META-INF/services/**") {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
+    mergeServiceFiles()
+}
+
+tasks.register('runDebug', JavaExec) {
+    group = "application"
+    description = "Run the KeY MCP server in debug mode"
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set("de.uka.ilkd.key.mcp.KeyMcpServer")
+    jvmArgs = ["-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005"]
+}
