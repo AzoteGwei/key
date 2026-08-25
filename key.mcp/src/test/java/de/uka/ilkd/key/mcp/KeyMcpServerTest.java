@@ -131,8 +131,7 @@ class KeyMcpServerTest {
         String contractId = null;
         for (Object c : contracts) {
             Map<String, Object> contract = (Map<String, Object>) c;
-            String display = (String) contract.get("displayName");
-            if ((display != null && display.contains("add")) || (contract.get("targetName").toString().contains("add"))) {
+            if (contract.get("targetName").toString().contains("add")) {
                 contractId = (String) contract.get("contractId");
                 break;
             }
@@ -163,5 +162,56 @@ class KeyMcpServerTest {
         }
         assertThat(completed).isNotNull();
         assertThat(completed.get("closed")).isEqualTo(true);
+    }
+
+    @Test
+    void interactiveProofTools() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+        server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"key_project_load\",\"arguments\":{\"location\":\"key.core.example/example\"}}}");
+        server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"key_contracts_list\",\"arguments\":{}}}");
+        TestTransport transport = (TestTransport) server.transport;
+
+        Map<String, Object> contractsResponse = Json.parseObject(transport.getSentMessages().get(2));
+        Map<String, Object> contractsResult = (Map<String, Object>) contractsResponse.get("result");
+        List<?> contracts = (List<?>) contractsResult.get("contracts");
+        String contractId = null;
+        for (Object c : contracts) {
+            Map<String, Object> contract = (Map<String, Object>) c;
+            if (contract.get("targetName").toString().contains("sub")) {
+                contractId = (String) contract.get("contractId");
+                break;
+            }
+        }
+        assertThat(contractId).isNotNull();
+
+        String create = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_create\",\"arguments\":{\"contractId\":\"" + contractId + "\"}}}";
+        server.handleMessage(create);
+        Map<String, Object> createResponse = Json.parseObject(transport.getSentMessages().get(3));
+        assertNoError(createResponse);
+        Map<String, Object> createResult = (Map<String, Object>) createResponse.get("result");
+        String proofId = (String) createResult.get("proofId");
+        assertThat((Integer) createResult.get("openGoals")).isGreaterThan(0);
+
+        String goals = "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_goals_list\",\"arguments\":{\"proofId\":\"" + proofId + "\"}}}";
+        server.handleMessage(goals);
+        Map<String, Object> goalsResponse = Json.parseObject(transport.getSentMessages().get(4));
+        assertNoError(goalsResponse);
+        Map<String, Object> goalsResult = (Map<String, Object>) goalsResponse.get("result");
+        List<?> openGoals = (List<?>) goalsResult.get("goals");
+        assertThat(openGoals).isNotEmpty();
+        int goalId = ((Number) ((Map<String, Object>) openGoals.get(0)).get("goalId")).intValue();
+
+        String goalGet = "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_goal_get\",\"arguments\":{\"proofId\":\"" + proofId + "\",\"goalId\":" + goalId + "}}}";
+        server.handleMessage(goalGet);
+        Map<String, Object> goalResponse = Json.parseObject(transport.getSentMessages().get(5));
+        assertNoError(goalResponse);
+
+        String scriptRun = "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_script_run\",\"arguments\":{\"proofId\":\"" + proofId + "\",\"script\":\"auto;\"}}}";
+        server.handleMessage(scriptRun);
+        Map<String, Object> scriptResponse = Json.parseObject(transport.getSentMessages().get(6));
+        assertNoError(scriptResponse);
+        Map<String, Object> scriptResult = (Map<String, Object>) scriptResponse.get("result");
+        assertThat(scriptResult.get("scriptExecuted")).isEqualTo(true);
     }
 }

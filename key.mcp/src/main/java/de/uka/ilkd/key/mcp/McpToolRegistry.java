@@ -10,14 +10,20 @@ import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import de.uka.ilkd.key.control.AbstractUserInterfaceControl;
 import de.uka.ilkd.key.control.KeYEnvironment;
 import de.uka.ilkd.key.mcp.json.Json;
 import de.uka.ilkd.key.mcp.operation.Operation;
 import de.uka.ilkd.key.mcp.operation.Operation.State;
 import de.uka.ilkd.key.mcp.session.McpSession;
+import de.uka.ilkd.key.nparser.KeyAst;
+import de.uka.ilkd.key.nparser.ParsingFacade;
+import de.uka.ilkd.key.proof.Goal;
 import de.uka.ilkd.key.proof.Proof;
 import de.uka.ilkd.key.proof.init.ProofInputException;
 import de.uka.ilkd.key.proof.io.ProblemLoaderException;
+import de.uka.ilkd.key.scripts.ProofScriptEngine;
+import de.uka.ilkd.key.scripts.ScriptException;
 import de.uka.ilkd.key.settings.ProofSettings;
 import de.uka.ilkd.key.speclang.Contract;
 import de.uka.ilkd.key.strategy.StrategyProperties;
@@ -46,6 +52,11 @@ public class McpToolRegistry {
         tools.add(proofStatus());
         tools.add(operationWait());
         tools.add(operationCancel());
+        tools.add(proofGoalsList());
+        tools.add(proofGoalGet());
+        tools.add(proofRuleApply());
+        tools.add(proofScriptRun());
+        tools.add(proofUndo());
         return tools;
     }
 
@@ -61,6 +72,11 @@ public class McpToolRegistry {
         case "key_proof_status" -> handleProofStatus(params);
         case "key_operation_wait" -> handleOperationWait(params);
         case "key_operation_cancel" -> handleOperationCancel(params);
+        case "key_proof_goals_list" -> handleProofGoalsList(params);
+        case "key_proof_goal_get" -> handleProofGoalGet(params);
+        case "key_proof_rule_apply" -> handleProofRuleApply(params);
+        case "key_proof_script_run" -> handleProofScriptRun(params);
+        case "key_proof_undo" -> handleProofUndo(params);
         default -> throw new IllegalArgumentException("Tool not implemented: " + name);
         };
     }
@@ -225,6 +241,65 @@ public class McpToolRegistry {
         return schema;
     }
 
+    private Map<String, Object> proofGoalsList() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_proof_goals_list");
+        schema.put("description", "List all open goals of a proof.");
+        schema.put("inputSchema", Map.of("type", "object",
+            "properties", Map.of("proofId", Map.of("type", "string")),
+            "required", List.of("proofId")));
+        return schema;
+    }
+
+    private Map<String, Object> proofGoalGet() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_proof_goal_get");
+        schema.put("description", "Get the sequent of a specific open goal.");
+        Map<String, Object> properties = Json.object();
+        properties.put("proofId", Map.of("type", "string"));
+        properties.put("goalId", Map.of("type", "integer"));
+        schema.put("inputSchema", Map.of("type", "object", "properties", properties,
+            "required", List.of("proofId", "goalId")));
+        return schema;
+    }
+
+    private Map<String, Object> proofRuleApply() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_proof_rule_apply");
+        schema.put("description", "Apply a rule by name to the given goal.");
+        Map<String, Object> properties = Json.object();
+        properties.put("proofId", Map.of("type", "string"));
+        properties.put("goalId", Map.of("type", "integer"));
+        properties.put("ruleName", Map.of("type", "string"));
+        schema.put("inputSchema", Map.of("type", "object", "properties", properties,
+            "required", List.of("proofId", "goalId", "ruleName")));
+        return schema;
+    }
+
+    private Map<String, Object> proofScriptRun() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_proof_script_run");
+        schema.put("description", "Run a KeY proof script on the current proof.");
+        Map<String, Object> properties = Json.object();
+        properties.put("proofId", Map.of("type", "string"));
+        properties.put("script", Map.of("type", "string"));
+        schema.put("inputSchema", Map.of("type", "object", "properties", properties,
+            "required", List.of("proofId", "script")));
+        return schema;
+    }
+
+    private Map<String, Object> proofUndo() {
+        Map<String, Object> schema = Json.object();
+        schema.put("name", "key_proof_undo");
+        schema.put("description", "Undo the last rule application on the given goal.");
+        Map<String, Object> properties = Json.object();
+        properties.put("proofId", Map.of("type", "string"));
+        properties.put("goalId", Map.of("type", "integer"));
+        schema.put("inputSchema", Map.of("type", "object", "properties", properties,
+            "required", List.of("proofId", "goalId")));
+        return schema;
+    }
+
     private Map<String, Object> handleProofCreate(Map<String, Object> params) {
         String contractId = (String) params.get("contractId");
         Proof proof = createProof(contractId);
@@ -314,6 +389,131 @@ public class McpToolRegistry {
         }
         operation.addCancelledEvent();
         return Map.of("cancelled", true);
+    }
+
+    private Map<String, Object> handleProofGoalsList(Map<String, Object> params) {
+        String proofId = (String) params.get("proofId");
+        Proof proof = requireProof(proofId);
+        List<Map<String, Object>> goals = new ArrayList<>();
+        int index = 0;
+        for (Goal goal : proof.openGoals()) {
+            Map<String, Object> item = Json.object();
+            item.put("goalId", index);
+            item.put("serialNr", goal.node().serialNr());
+            item.put("sequent", goal.sequent().toString());
+            goals.add(item);
+            index++;
+        }
+        return Map.of("proofId", proofId, "goals", goals);
+    }
+
+    private Map<String, Object> handleProofGoalGet(Map<String, Object> params) {
+        String proofId = (String) params.get("proofId");
+        int goalId = intValue(params.get("goalId"));
+        Proof proof = requireProof(proofId);
+        Goal goal = openGoalByIndex(proof, goalId);
+        Map<String, Object> result = Json.object();
+        result.put("proofId", proofId);
+        result.put("goalId", goalId);
+        result.put("serialNr", goal.node().serialNr());
+        result.put("sequent", goal.sequent().toString());
+        return result;
+    }
+
+    private Map<String, Object> handleProofRuleApply(Map<String, Object> params) {
+        String proofId = (String) params.get("proofId");
+        int goalId = intValue(params.get("goalId"));
+        String ruleName = (String) params.get("ruleName");
+        Proof proof = requireProof(proofId);
+
+        String script = "select number=" + goalId + ";\nrule " + ruleName + ";";
+        try {
+            executeScript(proof, script);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new McpToolException(-32603, "Interrupted", e.getMessage());
+        } catch (ScriptException e) {
+            throw new McpToolException(-32603, "Rule application failed: " + e.getMessage(), e.getMessage());
+        }
+
+        Map<String, Object> result = Json.object();
+        result.put("proofId", proofId);
+        result.put("goalId", goalId);
+        result.put("ruleName", ruleName);
+        result.put("applied", true);
+        result.put("openGoals", proof.openGoals().size());
+        return result;
+    }
+
+    private Map<String, Object> handleProofScriptRun(Map<String, Object> params) {
+        String proofId = (String) params.get("proofId");
+        String script = (String) params.get("script");
+        Proof proof = requireProof(proofId);
+
+        try {
+            executeScript(proof, script);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new McpToolException(-32603, "Interrupted", e.getMessage());
+        } catch (ScriptException e) {
+            throw new McpToolException(-32603, "Script failed: " + e.getMessage(), e.getMessage());
+        }
+
+        Map<String, Object> result = Json.object();
+        result.put("proofId", proofId);
+        result.put("scriptExecuted", true);
+        result.put("openGoals", proof.openGoals().size());
+        return result;
+    }
+
+    private Map<String, Object> handleProofUndo(Map<String, Object> params) {
+        String proofId = (String) params.get("proofId");
+        int goalId = intValue(params.get("goalId"));
+        Proof proof = requireProof(proofId);
+        Goal goal = openGoalByIndex(proof, goalId);
+        proof.pruneProof(goal);
+
+        Map<String, Object> result = Json.object();
+        result.put("proofId", proofId);
+        result.put("goalId", goalId);
+        result.put("undone", true);
+        result.put("openGoals", proof.openGoals().size());
+        return result;
+    }
+
+    private Proof requireProof(String proofId) {
+        Proof proof = session.getProof(proofId);
+        if (proof == null) {
+            throw new McpToolException(-32002, "Proof not found: " + proofId, null);
+        }
+        return proof;
+    }
+
+    private Goal openGoalByIndex(Proof proof, int index) {
+        int i = 0;
+        for (Goal goal : proof.openGoals()) {
+            if (i == index) {
+                return goal;
+            }
+            i++;
+        }
+        throw new McpToolException(-32002, "Goal not found: " + index, null);
+    }
+
+    private void executeScript(Proof proof, String scriptText) throws ScriptException, InterruptedException {
+        ensureEnvironment();
+        AbstractUserInterfaceControl ui = (AbstractUserInterfaceControl) session.getEnvironment().getUi();
+        KeyAst.ProofScript script = ParsingFacade.parseScript(scriptText);
+        ProofScriptEngine engine = new ProofScriptEngine(proof);
+        engine.setInitiallySelectedGoal(proof.openGoals().head());
+        engine.execute(ui, script);
+    }
+
+    private static int intValue(Object value) {
+        if (value instanceof Number n) {
+            return n.intValue();
+        }
+        return Integer.parseInt(value.toString());
     }
 
     private Proof createProof(String contractId) {
