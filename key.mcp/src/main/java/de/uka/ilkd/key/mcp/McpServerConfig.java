@@ -18,7 +18,6 @@ public record McpServerConfig(
         List<Path> allowedPaths,
         long defaultTimeoutMs,
         long defaultMaxSteps,
-        String defaultMaxHeap,
         List<String> allowedSmtSolvers) {
 
     /**
@@ -35,11 +34,9 @@ public record McpServerConfig(
             Long.parseLong(System.getenv().getOrDefault("KEY_MCP_DEFAULT_TIMEOUT_MS", "60000"));
         long defaultMaxSteps =
             Long.parseLong(System.getenv().getOrDefault("KEY_MCP_DEFAULT_MAX_STEPS", "10000"));
-        String defaultMaxHeap = System.getenv().getOrDefault("KEY_MCP_DEFAULT_MAX_HEAP", "4g");
         List<String> allowedSmtSolvers =
             parseStringList(System.getenv().getOrDefault("KEY_MCP_SMT_SOLVERS", ""));
         return new McpServerConfig(workspace, allowedPaths, defaultTimeoutMs, defaultMaxSteps,
-            defaultMaxHeap,
             allowedSmtSolvers);
     }
 

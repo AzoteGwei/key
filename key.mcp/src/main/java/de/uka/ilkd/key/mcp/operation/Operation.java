@@ -65,7 +65,9 @@ public class Operation {
     }
 
     public void addCompletedEvent(boolean closed, int openGoals, int usedSteps, long durationMs) {
-        setState(State.COMPLETED);
+        if (!transitionTo(State.COMPLETED)) {
+            return;
+        }
         Map<String, Object> event = Json.object();
         event.put("type", "completed");
         event.put("closed", closed);
@@ -77,7 +79,9 @@ public class Operation {
     }
 
     public void addCancelledEvent() {
-        setState(State.CANCELLED);
+        if (!transitionTo(State.CANCELLED)) {
+            return;
+        }
         Map<String, Object> event = Json.object();
         event.put("type", "cancelled");
         event.put("timestamp", isoTimestamp());
@@ -85,7 +89,9 @@ public class Operation {
     }
 
     public void addTimeoutEvent() {
-        setState(State.TIMEOUT);
+        if (!transitionTo(State.TIMEOUT)) {
+            return;
+        }
         Map<String, Object> event = Json.object();
         event.put("type", "timeout");
         event.put("timestamp", isoTimestamp());
@@ -93,7 +99,9 @@ public class Operation {
     }
 
     public void addErrorEvent(String message) {
-        setState(State.ERROR);
+        if (!transitionTo(State.ERROR)) {
+            return;
+        }
         this.errorMessage = message;
         Map<String, Object> event = Json.object();
         event.put("type", "error");
@@ -102,11 +110,19 @@ public class Operation {
         addEvent(event);
     }
 
-    private void setState(State newState) {
+    /**
+     * Transitions from {@link State#RUNNING} to the given terminal state.
+     *
+     * @return {@code true} if the transition happened; {@code false} if the operation
+     *         already reached a terminal state
+     */
+    private boolean transitionTo(State newState) {
         synchronized (lock) {
             if (this.state == State.RUNNING) {
                 this.state = newState;
+                return true;
             }
+            return false;
         }
     }
 

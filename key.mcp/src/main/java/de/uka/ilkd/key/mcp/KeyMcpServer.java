@@ -9,9 +9,11 @@ import java.util.Map;
 import java.util.UUID;
 
 import de.uka.ilkd.key.mcp.json.Json;
+import de.uka.ilkd.key.mcp.json.JsonParseException;
 import de.uka.ilkd.key.mcp.protocol.JsonRpcCodec;
 import de.uka.ilkd.key.mcp.protocol.McpRequest;
 import de.uka.ilkd.key.mcp.session.McpSession;
+import de.uka.ilkd.key.mcp.tools.ToolContext;
 import de.uka.ilkd.key.mcp.transport.StdioTransport;
 
 import ch.qos.logback.classic.Level;
@@ -75,6 +77,10 @@ public class KeyMcpServer {
             if (response != null) {
                 transport.send(response);
             }
+        } catch (JsonParseException e) {
+            String errorJson =
+                JsonRpcCodec.encodeError(null, -32700, "Parse error: " + e.getMessage(), null);
+            transport.send(errorJson);
         } catch (Exception e) {
             LOGGER.error("Failed to handle message: {}", message, e);
             String errorJson =
@@ -84,6 +90,10 @@ public class KeyMcpServer {
     }
 
     private String handleRequest(McpRequest request) {
+        if (request.id() == null) {
+            // JSON-RPC notifications must not be answered.
+            return null;
+        }
         return switch (request.method()) {
             case "initialize" -> handleInitialize(request);
             case "notifications/initialized" -> {
@@ -111,17 +121,18 @@ public class KeyMcpServer {
 
         String sessionId = UUID.randomUUID().toString();
         session = new McpSession(sessionId);
-        toolRegistry = new McpToolRegistry(config, session);
-        resourceHandler = new McpResourceHandler(session);
+        ToolContext toolContext = new ToolContext(config, session);
+        toolRegistry = new McpToolRegistry(toolContext);
+        resourceHandler = new McpResourceHandler(toolContext);
         promptHandler = new McpPromptHandler();
 
         Map<String, Object> serverInfo = Json.object();
         serverInfo.put("name", "key-mcp");
-        serverInfo.put("version", "3.1.0");
+        serverInfo.put("version", "3.1.0-dev");
 
         Map<String, Object> capabilities = Json.object();
-        capabilities.put("tools", Map.of("listChanged", true));
-        capabilities.put("resources", Map.of("subscribe", false, "listChanged", true));
+        capabilities.put("tools", Map.of("listChanged", false));
+        capabilities.put("resources", Map.of("subscribe", false, "listChanged", false));
         capabilities.put("prompts", Map.of("listChanged", false));
         capabilities.put("logging", Map.of());
 
@@ -145,7 +156,11 @@ public class KeyMcpServer {
 
     private String handleToolsCall(McpRequest request) {
         Map<String, Object> params = request.params();
-        String name = (String) params.get("name");
+        Object nameObj = params.get("name");
+        if (!(nameObj instanceof String name)) {
+            return JsonRpcCodec.encodeError(request.id(), -32602,
+                "Missing or invalid 'name' parameter", null);
+        }
         Object arguments = params.get("arguments");
         Map<String, Object> argumentsMap =
             (arguments instanceof Map) ? (Map<String, Object>) arguments : Map.of();

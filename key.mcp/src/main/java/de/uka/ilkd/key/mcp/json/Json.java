@@ -58,8 +58,8 @@ public final class Json {
     public static Map<String, Object> parseObject(String input) {
         Object value = parse(input);
         if (!(value instanceof Map)) {
-            throw new JsonParseException(
-                "Expected JSON object, got " + value.getClass().getSimpleName());
+            throw new JsonParseException("Expected JSON object, got "
+                + (value == null ? "null" : value.getClass().getSimpleName()));
         }
         return (Map<String, Object>) value;
     }
@@ -219,6 +219,9 @@ public final class Json {
                 Object value = parseValue();
                 map.put(key, value);
                 skipWhitespace();
+                if (pos >= length) {
+                    throw new JsonParseException("Unexpected end of input inside object");
+                }
                 char c = input.charAt(pos++);
                 if (c == '}') {
                     break;
@@ -242,6 +245,9 @@ public final class Json {
                 Object value = parseValue();
                 list.add(value);
                 skipWhitespace();
+                if (pos >= length) {
+                    throw new JsonParseException("Unexpected end of input inside array");
+                }
                 char c = input.charAt(pos++);
                 if (c == ']') {
                     break;

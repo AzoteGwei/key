@@ -25,6 +25,13 @@ public class OperationTracker {
         return operations.get(id);
     }
 
+    /**
+     * Returns all currently tracked operations.
+     */
+    public java.util.Collection<Operation> getAll() {
+        return operations.values();
+    }
+
     public Operation remove(String id) {
         return operations.remove(id);
     }

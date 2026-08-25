@@ -11,6 +11,7 @@ import java.util.Map;
 import de.uka.ilkd.key.control.KeYEnvironment;
 import de.uka.ilkd.key.java.ast.abstraction.KeYJavaType;
 import de.uka.ilkd.key.logic.op.IObserverFunction;
+import de.uka.ilkd.key.mcp.operation.Operation;
 import de.uka.ilkd.key.mcp.operation.OperationTracker;
 import de.uka.ilkd.key.proof.Proof;
 import de.uka.ilkd.key.speclang.Contract;
@@ -71,6 +72,12 @@ public class McpSession {
                 }
             }
         }
+        // Sort by target name first: display names are not unique (e.g. several
+        // "JML normal behavior operation contract"s), so they cannot stabilize the order.
+        loadedContracts.sort(java.util.Comparator
+                .comparing((Contract c) -> c.getTarget().name().toString())
+                .thenComparing(Contract::getDisplayName)
+                .thenComparing(c -> c.getClass().getName()));
         int index = 0;
         for (Contract c : loadedContracts) {
             String contractId = "contract_" + index + "_" + sanitize(c.getDisplayName());
@@ -117,9 +124,17 @@ public class McpSession {
     }
 
     /**
-     * Disposes the session and all owned proofs and the environment.
+     * Disposes the session and all owned proofs and the environment. Running operations
+     * (e.g. auto mode workers) are interrupted first so they do not keep mutating disposed
+     * proofs.
      */
     public void dispose() {
+        for (Operation operation : operationTracker.getAll()) {
+            Thread worker = operation.getWorkerThread();
+            if (worker != null && worker.isAlive()) {
+                worker.interrupt();
+            }
+        }
         for (Proof proof : proofs.values()) {
             if (!proof.isDisposed()) {
                 proof.dispose();

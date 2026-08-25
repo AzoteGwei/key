@@ -3,30 +3,26 @@
  * SPDX-License-Identifier: GPL-2.0-only */
 package de.uka.ilkd.key.mcp;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import de.uka.ilkd.key.mcp.json.Json;
 import de.uka.ilkd.key.mcp.session.McpSession;
+import de.uka.ilkd.key.mcp.tools.ToolContext;
 import de.uka.ilkd.key.proof.Goal;
 import de.uka.ilkd.key.proof.Proof;
-import de.uka.ilkd.key.proof.io.OutputStreamProofSaver;
-import de.uka.ilkd.key.settings.DefaultSMTSettings;
-import de.uka.ilkd.key.settings.ProofIndependentSMTSettings;
-import de.uka.ilkd.key.smt.SMTSettings;
-import de.uka.ilkd.key.smt.SmtLib2Translator;
 
 /**
  * Handles MCP resources.
  */
 public class McpResourceHandler {
     private final McpSession session;
+    private final ToolContext ctx;
 
-    public McpResourceHandler(McpSession session) {
-        this.session = session;
+    public McpResourceHandler(ToolContext ctx) {
+        this.ctx = ctx;
+        this.session = ctx.session();
     }
 
     public List<Map<String, Object>> listResources() {
@@ -40,8 +36,8 @@ public class McpResourceHandler {
                 resource("proof://" + proofId + "/goals", "Proof goals", "application/json"));
             resources.add(
                 resource("proof://" + proofId + "/tree", "Proof tree", "application/json"));
-            resources.add(resource("proof://" + proofId + "/export", "Proof export",
-                "application/octet-stream"));
+            resources.add(
+                resource("proof://" + proofId + "/export", "Proof export", "text/plain"));
             resources.add(resource("proof://" + proofId + "/smt", "SMT translation", "text/plain"));
             resources.add(
                 resource("proof://" + proofId + "/counterexample", "Counterexample", "text/plain"));
@@ -80,7 +76,7 @@ public class McpResourceHandler {
     }
 
     private Map<String, Object> readContracts() {
-        return new McpToolRegistry(null, session).execute("key_contracts_list", Map.of());
+        return Map.of("contracts", ctx.contractsListJson());
     }
 
     private Map<String, Object> readProofResource(String uri) {
@@ -108,21 +104,30 @@ public class McpResourceHandler {
                 if (parts.length < 3) {
                     throw new McpToolException(-32602, "Missing goal id in URI: " + uri, null);
                 }
-                int goalId = Integer.parseInt(parts[2]);
+                int goalId;
+                try {
+                    goalId = Integer.parseInt(parts[2]);
+                } catch (NumberFormatException e) {
+                    throw new McpToolException(-32602, "Invalid goal id in URI: " + uri, null);
+                }
                 result.put("text", goalJson(proof, goalId));
                 break;
             case "tree":
-                result.put("text", Json.stringify(proofTreeJson(proof.root())));
+                result.put("text", Json.stringify(ctx.proofTreeJson(proof.root())));
                 break;
             case "export":
-                result.put("text", exportProof(proof));
+                result.put("text", ctx.exportProofText(proof));
                 break;
             case "smt":
-                result.put("text", smtText(proof));
+                if (proof.openGoals().isEmpty()) {
+                    result.put("text", "// Proof is closed; no SMT problem available.");
+                } else {
+                    result.put("text", ctx.smtText(proof));
+                }
                 break;
             case "counterexample":
                 result.put("text",
-                    "Counterexample extraction requires an explicitly enabled SMT solver and is not yet implemented in this version.");
+                    Json.stringify(ctx.counterexampleFor(proof, null)));
                 break;
             default:
                 throw new McpToolException(-32002, "Unknown proof resource suffix: " + suffix,
@@ -174,50 +179,5 @@ public class McpResourceHandler {
             index++;
         }
         throw new McpToolException(-32002, "Goal not found: " + goalId, null);
-    }
-
-    private Map<String, Object> proofTreeJson(de.uka.ilkd.key.proof.Node node) {
-        Map<String, Object> item = Json.object();
-        item.put("serialNr", node.serialNr());
-        item.put("sequent", node.sequent().toString());
-        if (node.getAppliedRuleApp() != null) {
-            item.put("rule", node.getAppliedRuleApp().rule().name().toString());
-        }
-        List<Map<String, Object>> children = new ArrayList<>();
-        for (de.uka.ilkd.key.proof.Node child : node.children()) {
-            children.add(proofTreeJson(child));
-        }
-        item.put("children", children);
-        return item;
-    }
-
-    private String exportProof(Proof proof) {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        try {
-            new OutputStreamProofSaver(proof).save(null, baos);
-            return baos.toString(java.nio.charset.StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new McpToolException(-32603, "Failed to export proof: " + e.getMessage(),
-                e.getMessage());
-        }
-    }
-
-    private String smtText(Proof proof) {
-        if (proof.openGoals().isEmpty()) {
-            return "// Proof is closed; no SMT problem available.";
-        }
-        Goal goal = proof.openGoals().head();
-        SMTSettings settings = new DefaultSMTSettings(proof.getSettings().getSMTSettings(),
-            ProofIndependentSMTSettings.getDefaultSettingsData(),
-            proof.getSettings().getNewSMTSettings(), proof);
-        try {
-            SmtLib2Translator translator =
-                new SmtLib2Translator(new String[0], new String[0], null);
-            return translator.translateProblem(goal.sequent(), proof.getServices(), settings)
-                    .toString();
-        } catch (Exception e) {
-            throw new McpToolException(-32603, "SMT translation failed: " + e.getMessage(),
-                e.getMessage());
-        }
     }
 }

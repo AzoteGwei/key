@@ -4,7 +4,6 @@
 package de.uka.ilkd.key.mcp.tools;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -13,7 +12,6 @@ import de.uka.ilkd.key.mcp.McpToolException;
 import de.uka.ilkd.key.mcp.PathValidator;
 import de.uka.ilkd.key.mcp.json.Json;
 import de.uka.ilkd.key.proof.io.ProblemLoaderException;
-import de.uka.ilkd.key.speclang.Contract;
 
 /**
  * Tools for loading projects and listing contracts.
@@ -40,7 +38,7 @@ public class ProjectToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleProjectLoad(Map<String, Object> params) {
-        String location = (String) params.get("location");
+        String location = ToolContext.requireString(params, "location");
         Path projectPath = PathValidator.resolveAndValidate(location, ctx.config().workspace(),
             ctx.config().allowedPaths());
 
@@ -67,15 +65,6 @@ public class ProjectToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleContractsList(Map<String, Object> params) {
-        List<Map<String, Object>> list = new ArrayList<>();
-        for (Map.Entry<String, Contract> entry : ctx.session().getContracts().entrySet()) {
-            Map<String, Object> item = Json.object();
-            item.put("contractId", entry.getKey());
-            item.put("targetName", entry.getValue().getTarget().name().toString());
-            item.put("displayName", entry.getValue().getDisplayName());
-            item.put("type", entry.getValue().getClass().getSimpleName());
-            list.add(item);
-        }
-        return Map.of("contracts", list);
+        return Map.of("contracts", ctx.contractsListJson());
     }
 }

@@ -36,9 +36,10 @@ The server reads its configuration from environment variables:
 | `KEY_MCP_ALLOWED_PATHS` | Workspace root | Comma-separated list of allowed path prefixes. |
 | `KEY_MCP_DEFAULT_TIMEOUT_MS` | 60000 | Default timeout for proof operations. |
 | `KEY_MCP_DEFAULT_MAX_STEPS` | 10000 | Default maximum rule applications. |
-| `KEY_MCP_DEFAULT_MAX_HEAP` | 4g | JVM heap hint (must be set via `JAVA_OPTS` or `-Xmx` before startup). |
 | `KEY_MCP_SMT_SOLVERS` | (empty) | Comma-separated list of allowed SMT solver names/paths. Empty means SMT is disabled. |
-| `KEY_MCP_LOG_LEVEL` | INFO | Log level for server-side logging. |
+| `KEY_MCP_LOG_LEVEL` | INFO | Log level for server-side logging (always written to stderr). |
+
+The JVM heap size cannot be changed at runtime; set it at startup, e.g. `java -Xmx4g -jar ...`.
 
 ## Example Claude Desktop configuration
 

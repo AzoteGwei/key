@@ -24,7 +24,10 @@ public class McpToolRegistry {
     private final Map<String, ToolDefinition> tools = new LinkedHashMap<>();
 
     public McpToolRegistry(McpServerConfig config, McpSession session) {
-        ToolContext ctx = new ToolContext(config, session);
+        this(new ToolContext(config, session));
+    }
+
+    public McpToolRegistry(ToolContext ctx) {
         new SessionToolHandler(ctx).registerTools(tools);
         new ProjectToolHandler(ctx).registerTools(tools);
         new ProofToolHandler(ctx).registerTools(tools);

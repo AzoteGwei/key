@@ -82,7 +82,7 @@ public class ProofToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleProofCreate(Map<String, Object> params) {
-        String contractId = (String) params.get("contractId");
+        String contractId = ToolContext.requireString(params, "contractId");
         Proof proof = ctx.createProof(contractId);
         String proofId = ctx.session().nextProofId(contractId);
         ctx.session().registerProof(proofId, proof);
@@ -95,7 +95,7 @@ public class ProofToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleProofAuto(Map<String, Object> params) {
-        String contractId = (String) params.get("contractId");
+        String contractId = ToolContext.requireString(params, "contractId");
         long timeoutMs =
             ToolContext.longValue(params.get("timeoutMs"), ctx.config().defaultTimeoutMs());
         long maxSteps =
@@ -112,6 +112,7 @@ public class ProofToolHandler extends ToolHandler {
         Operation operation = ctx.session().getOperationTracker().start(proofId, "proof_auto");
         Thread worker = new Thread(() -> runAutoMode(operation, proof, timeoutMs),
             "key-proof-auto-" + operation.getId());
+        worker.setDaemon(true);
         operation.setWorkerThread(worker);
         worker.start();
 
@@ -134,7 +135,7 @@ public class ProofToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleProofStatus(Map<String, Object> params) {
-        String proofId = (String) params.get("proofId");
+        String proofId = ToolContext.requireString(params, "proofId");
         Proof proof = ctx.requireProof(proofId);
         Map<String, Object> result = Json.object();
         result.put("proofId", proofId);
@@ -145,7 +146,7 @@ public class ProofToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleProofGoalsList(Map<String, Object> params) {
-        String proofId = (String) params.get("proofId");
+        String proofId = ToolContext.requireString(params, "proofId");
         Proof proof = ctx.requireProof(proofId);
         List<Map<String, Object>> goals = new ArrayList<>();
         int index = 0;
@@ -161,7 +162,7 @@ public class ProofToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleProofGoalGet(Map<String, Object> params) {
-        String proofId = (String) params.get("proofId");
+        String proofId = ToolContext.requireString(params, "proofId");
         int goalId = ToolContext.intValue(params.get("goalId"));
         Proof proof = ctx.requireProof(proofId);
         Goal goal = ctx.openGoalByIndex(proof, goalId);
@@ -174,9 +175,9 @@ public class ProofToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleProofRuleApply(Map<String, Object> params) {
-        String proofId = (String) params.get("proofId");
+        String proofId = ToolContext.requireString(params, "proofId");
         int goalId = ToolContext.intValue(params.get("goalId"));
-        String ruleName = (String) params.get("ruleName");
+        String ruleName = ToolContext.requireString(params, "ruleName");
         Proof proof = ctx.requireProof(proofId);
 
         StringBuilder script = new StringBuilder();
@@ -211,8 +212,8 @@ public class ProofToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleProofScriptRun(Map<String, Object> params) {
-        String proofId = (String) params.get("proofId");
-        String script = (String) params.get("script");
+        String proofId = ToolContext.requireString(params, "proofId");
+        String script = ToolContext.requireString(params, "script");
         Proof proof = ctx.requireProof(proofId);
 
         try {
@@ -232,7 +233,7 @@ public class ProofToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleProofUndo(Map<String, Object> params) {
-        String proofId = (String) params.get("proofId");
+        String proofId = ToolContext.requireString(params, "proofId");
         int goalId = ToolContext.intValue(params.get("goalId"));
         Proof proof = ctx.requireProof(proofId);
         Goal goal = ctx.openGoalByIndex(proof, goalId);
@@ -272,7 +273,7 @@ public class ProofToolHandler extends ToolHandler {
     }
 
     private void runAutoMode(Operation operation, Proof proof, long timeoutMs) {
-        Timer timer = new Timer();
+        Timer timer = new Timer(true);
         timer.schedule(new TimerTask() {
             @Override
             public void run() {
@@ -319,6 +320,7 @@ public class ProofToolHandler extends ToolHandler {
             this.operation = operation;
             this.proof = proof;
             this.thread = new Thread(this::watch, "key-progress-watcher");
+            this.thread.setDaemon(true);
         }
 
         void start() {

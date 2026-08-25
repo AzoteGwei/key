@@ -32,7 +32,7 @@ public class OperationToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleOperationWait(Map<String, Object> params) {
-        String operationId = (String) params.get("operationId");
+        String operationId = ToolContext.requireString(params, "operationId");
         long waitTimeoutMs = ToolContext.longValue(params.get("timeoutMs"), 30000L);
         Operation operation = ctx.session().getOperationTracker().get(operationId);
         if (operation == null) {
@@ -47,7 +47,7 @@ public class OperationToolHandler extends ToolHandler {
     }
 
     private Map<String, Object> handleOperationCancel(Map<String, Object> params) {
-        String operationId = (String) params.get("operationId");
+        String operationId = ToolContext.requireString(params, "operationId");
         Operation operation = ctx.session().getOperationTracker().get(operationId);
         if (operation == null) {
             throw new McpToolException(-32003, "Operation not found: " + operationId, null);

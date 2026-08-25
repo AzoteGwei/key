@@ -36,11 +36,11 @@ public class McpPromptHandler {
 
     public Map<String, Object> getPrompt(String name, Map<String, Object> arguments) {
         return switch (name) {
-        case "verify_contract" -> verifyContract(arguments);
-        case "verify_all_contracts" -> verifyAllContracts(arguments);
-        case "diagnose_open_goals" -> diagnoseOpenGoals(arguments);
-        case "extract_counterexample" -> extractCounterexample(arguments);
-        default -> throw new McpToolException(-32601, "Prompt not found: " + name, null);
+            case "verify_contract" -> verifyContract(arguments);
+            case "verify_all_contracts" -> verifyAllContracts(arguments);
+            case "diagnose_open_goals" -> diagnoseOpenGoals(arguments);
+            case "extract_counterexample" -> extractCounterexample(arguments);
+            default -> throw new McpToolException(-32601, "Prompt not found: " + name, null);
         };
     }
 
@@ -52,7 +52,7 @@ public class McpPromptHandler {
         text.append("2. Call key_contracts_list to list available contracts.\n");
         if (contractId != null) {
             text.append("3. Use contractId ").append(contractId)
-                .append(" and call key_proof_auto with timeoutMs and maxSteps.\n");
+                    .append(" and call key_proof_auto with timeoutMs and maxSteps.\n");
         } else {
             text.append(
                 "3. Pick a contractId and call key_proof_auto with timeoutMs and maxSteps.\n");

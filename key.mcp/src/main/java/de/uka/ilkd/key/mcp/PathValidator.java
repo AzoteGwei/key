@@ -29,9 +29,6 @@ public final class PathValidator {
             path = workspace.resolve(path);
         }
         path = path.toAbsolutePath().normalize();
-        if (path.getParent() == null) {
-            return path;
-        }
         for (Path allowed : allowedPaths) {
             if (path.startsWith(allowed.normalize())) {
                 return path;
