@@ -14,6 +14,11 @@ import de.uka.ilkd.key.mcp.protocol.McpRequest;
 import de.uka.ilkd.key.mcp.session.McpSession;
 import de.uka.ilkd.key.mcp.transport.StdioTransport;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.ConsoleAppender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -147,7 +152,8 @@ public class KeyMcpServer {
         try {
             Map<String, Object> toolOutput = toolRegistry.execute(name, argumentsMap);
             Map<String, Object> result = Json.object();
-            result.put("content", List.of(Map.of("type", "text", "text", Json.stringify(toolOutput))));
+            result.put("content",
+                List.of(Map.of("type", "text", "text", Json.stringify(toolOutput))));
             result.put("structuredContent", toolOutput);
             return JsonRpcCodec.encodeSuccess(request.id(), result);
         } catch (McpSecurityException e) {
@@ -211,8 +217,42 @@ public class KeyMcpServer {
      * Program entry point.
      */
     public static void main(String[] args) throws IOException {
+        configureLogging();
         LOGGER.info("Starting KeY MCP server");
         KeyMcpServer server = stdio();
         server.run();
+    }
+
+    /**
+     * Redirects all logging to stderr and applies {@code KEY_MCP_LOG_LEVEL}.
+     *
+     * <p>
+     * The MCP stdio transport requires stdout to carry only JSON-RPC messages, so logback's
+     * default console appender (which targets stdout) must be retargeted to stderr.
+     * </p>
+     */
+    static void configureLogging() {
+        if (LoggerFactory.getILoggerFactory() instanceof LoggerContext context) {
+            ch.qos.logback.classic.Logger root =
+                context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+            root.detachAndStopAllAppenders();
+
+            PatternLayoutEncoder encoder = new PatternLayoutEncoder();
+            encoder.setContext(context);
+            encoder.setPattern("%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} -- %msg%n");
+            encoder.start();
+
+            ConsoleAppender<ILoggingEvent> stderr = new ConsoleAppender<>();
+            stderr.setContext(context);
+            stderr.setTarget("System.err");
+            stderr.setEncoder(encoder);
+            stderr.start();
+            root.addAppender(stderr);
+
+            String level = System.getenv("KEY_MCP_LOG_LEVEL");
+            if (level != null && !level.isBlank()) {
+                root.setLevel(Level.toLevel(level, Level.INFO));
+            }
+        }
     }
 }
