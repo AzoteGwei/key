@@ -24,13 +24,16 @@ public abstract class ToolHandler {
     public abstract void registerTools(Map<String, ToolDefinition> tools);
 
     protected void register(Map<String, ToolDefinition> tools, String name, String description,
-            Map<String, Object> properties, List<String> required,
+            Map<String, Object> inputProperties, List<String> requiredInput,
+            Map<String, Object> outputSchema, Map<String, Object> annotations,
             ToolDefinition.ToolExecutor executor) {
         Map<String, Object> schema = Json.object();
         schema.put("name", name);
         schema.put("description", description);
         schema.put("inputSchema",
-            Map.of("type", "object", "properties", properties, "required", required));
+            Map.of("type", "object", "properties", inputProperties, "required", requiredInput));
+        schema.put("outputSchema", outputSchema);
+        schema.put("annotations", annotations != null ? annotations : Json.object());
         tools.put(name, new ToolDefinition(schema, executor));
     }
 
@@ -40,5 +43,68 @@ public abstract class ToolHandler {
             properties.put((String) keysAndValues[i], keysAndValues[i + 1]);
         }
         return properties;
+    }
+
+    // ----- JSON Schema helpers ------------------------------------------------
+
+    protected static Map<String, Object> objectSchema(List<String> required,
+            Map<String, Object> properties) {
+        Map<String, Object> schema = Json.object();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        if (required != null && !required.isEmpty()) {
+            schema.put("required", required);
+        }
+        return schema;
+    }
+
+    protected static Map<String, Object> arraySchema(Map<String, Object> items) {
+        Map<String, Object> schema = Json.object();
+        schema.put("type", "array");
+        if (items != null) {
+            schema.put("items", items);
+        }
+        return schema;
+    }
+
+    protected static Map<String, Object> stringSchema() {
+        return Map.of("type", "string");
+    }
+
+    protected static Map<String, Object> integerSchema() {
+        return Map.of("type", "integer");
+    }
+
+    protected static Map<String, Object> booleanSchema() {
+        return Map.of("type", "boolean");
+    }
+
+    protected static Map<String, Object> enumSchema(List<String> values) {
+        Map<String, Object> schema = Json.object();
+        schema.put("type", "string");
+        schema.put("enum", values);
+        return schema;
+    }
+
+    @SafeVarargs
+    protected static Map<String, Object> anyOfSchema(Map<String, Object>... alternatives) {
+        return Map.of("anyOf", List.of(alternatives));
+    }
+
+    // ----- Annotation helpers -------------------------------------------------
+
+    protected static Map<String, Object> annotations(boolean readOnly, boolean destructive,
+            boolean idempotent) {
+        Map<String, Object> annotations = Json.object();
+        if (readOnly) {
+            annotations.put("readOnlyHint", true);
+        }
+        if (destructive) {
+            annotations.put("destructiveHint", true);
+        }
+        if (idempotent) {
+            annotations.put("idempotentHint", true);
+        }
+        return annotations;
     }
 }

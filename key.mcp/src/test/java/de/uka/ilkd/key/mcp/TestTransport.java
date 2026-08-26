@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import de.uka.ilkd.key.mcp.transport.StdioTransport;
@@ -15,7 +16,7 @@ import de.uka.ilkd.key.mcp.transport.StdioTransport;
  * Test-only transport that captures sent messages and ignores the read loop.
  */
 class TestTransport extends StdioTransport {
-    private final List<String> sentMessages = new ArrayList<>();
+    private final List<String> sentMessages = Collections.synchronizedList(new ArrayList<>());
 
     TestTransport() {
         super(InputStream.nullInputStream(), OutputStream.nullOutputStream(), m -> {
@@ -33,6 +34,8 @@ class TestTransport extends StdioTransport {
     }
 
     public List<String> getSentMessages() {
-        return sentMessages;
+        synchronized (sentMessages) {
+            return new ArrayList<>(sentMessages);
+        }
     }
 }

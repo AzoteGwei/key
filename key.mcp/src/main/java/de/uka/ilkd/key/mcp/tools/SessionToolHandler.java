@@ -20,12 +20,30 @@ public class SessionToolHandler extends ToolHandler {
     @Override
     public void registerTools(Map<String, ToolDefinition> tools) {
         register(tools, "key_session_info", "Get information about the current MCP session.",
-            Map.of(), List.of(), this::handleSessionInfo);
+            Map.of(), List.of(),
+            objectSchema(List.of("sessionId", "environmentLoaded", "contractCount", "proofCount"),
+                props(
+                    "sessionId", stringSchema(),
+                    "environmentLoaded", booleanSchema(),
+                    "contractCount", integerSchema(),
+                    "proofCount", integerSchema())),
+            annotations(true, false, true),
+            this::handleSessionInfo);
         register(tools, "key_session_reset",
             "Reset the session, disposing all proofs and the current KeY environment.",
-            Map.of(), List.of(), this::handleSessionReset);
+            Map.of(), List.of(),
+            objectSchema(List.of("success"),
+                props("success", booleanSchema())),
+            annotations(false, true, true),
+            this::handleSessionReset);
         register(tools, "key_session_dispose", "Dispose the session and release all resources.",
-            Map.of(), List.of(), this::handleSessionDispose);
+            Map.of(), List.of(),
+            objectSchema(List.of("success", "disposed"),
+                props(
+                    "success", booleanSchema(),
+                    "disposed", booleanSchema())),
+            annotations(false, true, true),
+            this::handleSessionDispose);
     }
 
     private Map<String, Object> handleSessionInfo(Map<String, Object> params) {

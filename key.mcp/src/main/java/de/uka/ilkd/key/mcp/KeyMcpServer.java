@@ -4,9 +4,13 @@
 package de.uka.ilkd.key.mcp;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import de.uka.ilkd.key.mcp.json.Json;
 import de.uka.ilkd.key.mcp.json.JsonParseException;
@@ -66,6 +70,9 @@ public class KeyMcpServer {
     private McpResourceHandler resourceHandler;
     private McpPromptHandler promptHandler;
 
+    private final Set<Object> cancelledRequests = Collections.synchronizedSet(new HashSet<>());
+    private final Map<Object, Thread> inFlightRequests = new ConcurrentHashMap<>();
+
     public KeyMcpServer(StdioTransport transport) {
         this(transport, McpServerConfig.fromEnvironment());
     }
@@ -90,9 +97,27 @@ public class KeyMcpServer {
     }
 
     void handleMessage(String message) {
+        McpRequest request = null;
+        boolean cancelled = false;
         try {
-            McpRequest request = JsonRpcCodec.parseRequest(message);
-            String response = handleRequest(request);
+            request = JsonRpcCodec.parseRequest(message);
+            Object id = request.id();
+            if (id != null) {
+                inFlightRequests.put(id, Thread.currentThread());
+            }
+            String response = null;
+            try {
+                response = handleRequest(request);
+            } finally {
+                if (id != null && cancelledRequests.contains(id)) {
+                    cancelled = true;
+                    response = null;
+                }
+                if (id != null) {
+                    inFlightRequests.remove(id);
+                    cancelledRequests.remove(id);
+                }
+            }
             if (response != null) {
                 transport.send(response);
             }
@@ -101,6 +126,10 @@ public class KeyMcpServer {
                 JsonRpcCodec.encodeError(null, -32700, "Parse error: " + e.getMessage(), null);
             transport.send(errorJson);
         } catch (Exception e) {
+            if (cancelled) {
+                // The request was cancelled; do not send any further message for it.
+                return;
+            }
             LOGGER.error("Failed to handle message: {}", message, e);
             String errorJson =
                 JsonRpcCodec.encodeError(null, -32603, "Internal error: " + e.getMessage(), null);
@@ -108,17 +137,51 @@ public class KeyMcpServer {
         }
     }
 
-    private String handleRequest(McpRequest request) {
-        if (request.id() == null) {
-            // JSON-RPC notifications must not be answered.
-            return null;
+    private boolean isCancelled(Object id) {
+        return cancelledRequests.contains(id);
+    }
+
+    private void cancelRequest(Object id) {
+        cancelledRequests.add(id);
+        Thread thread = inFlightRequests.get(id);
+        if (thread != null) {
+            thread.interrupt();
         }
-        return switch (request.method()) {
+    }
+
+    McpSession getSession() {
+        return session;
+    }
+
+    boolean isInFlight(Object id) {
+        return inFlightRequests.containsKey(id);
+    }
+
+    /**
+     * Removes a request id from the cancelled set. Tests use this to avoid leaking
+     * cancelled ids between scenarios.
+     */
+    void clearCancelled(Object id) {
+        cancelledRequests.remove(id);
+    }
+
+    private String handleRequest(McpRequest request) {
+        String response = switch (request.method()) {
             case "initialize" -> handleInitialize(request);
             case "server/discover" -> handleDiscover(request);
-            case "notifications/initialized", "notifications/cancelled" -> null;
+            case "notifications/initialized" -> null;
+            case "notifications/cancelled" -> {
+                Object cancelledId = request.params().get("requestId");
+                if (cancelledId != null) {
+                    cancelRequest(cancelledId);
+                }
+                yield null;
+            }
             default -> handleEraRouted(request);
         };
+        // JSON-RPC notifications (no id) must not be answered, even if method handling
+        // produced a response value.
+        return request.id() == null ? null : response;
     }
 
     /**

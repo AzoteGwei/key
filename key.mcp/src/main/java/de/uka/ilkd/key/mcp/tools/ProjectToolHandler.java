@@ -32,9 +32,25 @@ public class ProjectToolHandler extends ToolHandler {
                 "classPaths", Map.of("type", "array", "items", Map.of("type", "string")),
                 "bootClassPath", Map.of("type", "string"),
                 "includes", Map.of("type", "array", "items", Map.of("type", "string"))),
-            List.of("location"), this::handleProjectLoad);
+            List.of("location"),
+            objectSchema(List.of("success", "loadedTypes", "contractCount"),
+                props(
+                    "success", booleanSchema(),
+                    "loadedTypes", integerSchema(),
+                    "contractCount", integerSchema())),
+            annotations(false, false, false),
+            this::handleProjectLoad);
         register(tools, "key_contracts_list",
             "List all verification contracts in the loaded project.", Map.of(), List.of(),
+            objectSchema(List.of("contracts"),
+                props("contracts", arraySchema(
+                    objectSchema(List.of("contractId", "targetName", "displayName", "type"),
+                        props(
+                            "contractId", stringSchema(),
+                            "targetName", stringSchema(),
+                            "displayName", stringSchema(),
+                            "type", stringSchema()))))),
+            annotations(true, false, true),
             this::handleContractsList);
     }
 

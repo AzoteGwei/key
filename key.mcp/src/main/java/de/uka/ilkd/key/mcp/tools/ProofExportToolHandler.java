@@ -24,6 +24,43 @@ public class ProofExportToolHandler extends ToolHandler {
 
     @Override
     public void registerTools(Map<String, ToolDefinition> tools) {
+        Map<String, Object> exportProofContentSchema = objectSchema(
+            List.of("proofId", "format", "content"),
+            props(
+                "proofId", stringSchema(),
+                "format", stringSchema(),
+                "content", stringSchema()));
+        Map<String, Object> exportProofPathSchema = objectSchema(
+            List.of("proofId", "format", "path"),
+            props(
+                "proofId", stringSchema(),
+                "format", stringSchema(),
+                "path", stringSchema()));
+        Map<String, Object> exportJsonSchema = objectSchema(
+            List.of("proofId", "format", "tree"),
+            props(
+                "proofId", stringSchema(),
+                "format", stringSchema(),
+                "tree", objectSchema(null, Map.of())));
+        Map<String, Object> exportOutputSchema = anyOfSchema(exportProofContentSchema,
+            exportProofPathSchema, exportJsonSchema);
+
+        Map<String, Object> smtOutputSchema = objectSchema(List.of("proofId", "smt"),
+            props(
+                "proofId", stringSchema(),
+                "smt", stringSchema()));
+
+        Map<String, Object> counterexampleOutputSchema = objectSchema(
+            List.of("proofId", "openGoals", "supported"),
+            props(
+                "proofId", stringSchema(),
+                "openGoals", integerSchema(),
+                "supported", booleanSchema(),
+                "message", stringSchema(),
+                "result", stringSchema(),
+                "resultText", stringSchema(),
+                "counterexample", stringSchema()));
+
         register(tools, "key_proof_export",
             "Export a proof as a KeY .proof file or as a JSON tree.",
             props(
@@ -31,11 +68,15 @@ public class ProofExportToolHandler extends ToolHandler {
                 "format",
                 Map.of("type", "string", "enum", List.of("proof", "json"), "default", "proof"),
                 "path", Map.of("type", "string")),
-            List.of("proofId"), this::handleProofExport);
+            List.of("proofId"),
+            exportOutputSchema, annotations(false, true, true),
+            this::handleProofExport);
 
         register(tools, "key_proof_smt",
             "Translate the first open goal of a proof to SMT-LIB format.",
-            props("proofId", Map.of("type", "string")), List.of("proofId"), this::handleProofSmt);
+            props("proofId", Map.of("type", "string")), List.of("proofId"),
+            smtOutputSchema, annotations(true, false, true),
+            this::handleProofSmt);
 
         register(tools, "key_proof_counterexample",
             "Get a counterexample or error trace for a proof, if available.",
@@ -43,7 +84,9 @@ public class ProofExportToolHandler extends ToolHandler {
                 "proofId", Map.of("type", "string"),
                 "solver", Map.of("type", "string", "description",
                     "Name of the SMT solver to use (default: first enabled solver)")),
-            List.of("proofId"), this::handleProofCounterexample);
+            List.of("proofId"),
+            counterexampleOutputSchema, annotations(true, false, true),
+            this::handleProofCounterexample);
     }
 
     private Map<String, Object> handleProofExport(Map<String, Object> params) {

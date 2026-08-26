@@ -20,14 +20,38 @@ public class OperationToolHandler extends ToolHandler {
 
     @Override
     public void registerTools(Map<String, ToolDefinition> tools) {
+        Map<String, Object> operationEventSchema = objectSchema(List.of("type", "timestamp"),
+            props(
+                "type", stringSchema(),
+                "steps", integerSchema(),
+                "openGoals", integerSchema(),
+                "timestamp", stringSchema(),
+                "closed", booleanSchema(),
+                "usedSteps", integerSchema(),
+                "durationMs", integerSchema(),
+                "message", stringSchema()));
+        Map<String, Object> operationWaitSchema = objectSchema(
+            List.of("operationId", "state", "proofId", "events"),
+            props(
+                "operationId", stringSchema(),
+                "state", stringSchema(),
+                "proofId", stringSchema(),
+                "events", arraySchema(operationEventSchema),
+                "errorMessage", stringSchema()));
+        Map<String, Object> operationCancelSchema = objectSchema(List.of("cancelled"),
+            props("cancelled", booleanSchema()));
+
         register(tools, "key_operation_wait", "Poll events for a long-running operation.",
             props(
                 "operationId", Map.of("type", "string"),
                 "timeoutMs", Map.of("type", "integer", "default", 30000)),
-            List.of("operationId"), this::handleOperationWait);
+            List.of("operationId"),
+            operationWaitSchema, annotations(true, false, true),
+            this::handleOperationWait);
 
         register(tools, "key_operation_cancel", "Cancel a long-running operation.",
             props("operationId", Map.of("type", "string")), List.of("operationId"),
+            operationCancelSchema, annotations(false, true, true),
             this::handleOperationCancel);
     }
 

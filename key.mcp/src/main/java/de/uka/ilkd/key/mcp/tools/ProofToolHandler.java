@@ -32,9 +32,110 @@ public class ProofToolHandler extends ToolHandler {
 
     @Override
     public void registerTools(Map<String, ToolDefinition> tools) {
+        Map<String, Object> proofCreateSchema = objectSchema(
+            List.of("proofId", "status", "openGoals"),
+            props(
+                "proofId", stringSchema(),
+                "status", stringSchema(),
+                "openGoals", integerSchema()));
+
+        Map<String, Object> proofAutoAsyncSchema = objectSchema(
+            List.of("proofId", "operationId", "status"),
+            props(
+                "proofId", stringSchema(),
+                "operationId", stringSchema(),
+                "status", stringSchema()));
+        Map<String, Object> operationEventSchema = objectSchema(List.of("type", "timestamp"),
+            props(
+                "type", stringSchema(),
+                "steps", integerSchema(),
+                "openGoals", integerSchema(),
+                "timestamp", stringSchema(),
+                "closed", booleanSchema(),
+                "usedSteps", integerSchema(),
+                "durationMs", integerSchema(),
+                "message", stringSchema()));
+        Map<String, Object> proofAutoSyncSchema = objectSchema(
+            List.of("operationId", "state", "proofId", "events"),
+            props(
+                "operationId", stringSchema(),
+                "state", stringSchema(),
+                "proofId", stringSchema(),
+                "events", arraySchema(operationEventSchema),
+                "errorMessage", stringSchema()));
+
+        Map<String, Object> proofStatusSchema = objectSchema(
+            List.of("proofId", "closed", "openGoals", "usedSteps"),
+            props(
+                "proofId", stringSchema(),
+                "closed", booleanSchema(),
+                "openGoals", integerSchema(),
+                "usedSteps", integerSchema()));
+
+        Map<String, Object> goalSchema = objectSchema(
+            List.of("goalId", "serialNr", "sequent"),
+            props(
+                "goalId", integerSchema(),
+                "serialNr", integerSchema(),
+                "sequent", stringSchema()));
+        Map<String, Object> proofGoalsListSchema = objectSchema(
+            List.of("proofId", "goals"),
+            props(
+                "proofId", stringSchema(),
+                "goals", arraySchema(goalSchema)));
+
+        Map<String, Object> proofGoalGetSchema = objectSchema(
+            List.of("proofId", "goalId", "serialNr", "sequent"),
+            props(
+                "proofId", stringSchema(),
+                "goalId", integerSchema(),
+                "serialNr", integerSchema(),
+                "sequent", stringSchema()));
+
+        Map<String, Object> proofRuleApplySchema = objectSchema(
+            List.of("proofId", "goalId", "ruleName", "script", "applied", "openGoals"),
+            props(
+                "proofId", stringSchema(),
+                "goalId", integerSchema(),
+                "ruleName", stringSchema(),
+                "script", stringSchema(),
+                "applied", booleanSchema(),
+                "openGoals", integerSchema()));
+
+        Map<String, Object> proofScriptRunSchema = objectSchema(
+            List.of("proofId", "scriptExecuted", "openGoals"),
+            props(
+                "proofId", stringSchema(),
+                "scriptExecuted", booleanSchema(),
+                "openGoals", integerSchema()));
+
+        Map<String, Object> builtInRuleSchema = objectSchema(
+            List.of("name", "displayName"),
+            props(
+                "name", stringSchema(),
+                "displayName", stringSchema()));
+        Map<String, Object> proofRulesListSchema = objectSchema(
+            List.of("proofId", "builtInRules", "tacletCount"),
+            props(
+                "proofId", stringSchema(),
+                "builtInRules", arraySchema(builtInRuleSchema),
+                "tacletCount", integerSchema(),
+                "tacletHint", stringSchema(),
+                "taclets", arraySchema(stringSchema()),
+                "tacletsTruncated", booleanSchema()));
+
+        Map<String, Object> proofUndoSchema = objectSchema(
+            List.of("proofId", "goalId", "undone", "openGoals"),
+            props(
+                "proofId", stringSchema(),
+                "goalId", integerSchema(),
+                "undone", booleanSchema(),
+                "openGoals", integerSchema()));
+
         register(tools, "key_proof_create",
             "Create a proof for a contract without starting auto mode.",
             props("contractId", Map.of("type", "string")), List.of("contractId"),
+            proofCreateSchema, annotations(false, true, false),
             this::handleProofCreate);
 
         register(tools, "key_proof_auto", "Create a proof for a contract and run KeY auto mode.",
@@ -44,21 +145,28 @@ public class ProofToolHandler extends ToolHandler {
                 "maxSteps", Map.of("type", "integer", "minimum", 1),
                 "strategyOptions", Map.of("type", "object"),
                 "async", Map.of("type", "boolean", "default", true)),
-            List.of("contractId", "timeoutMs", "maxSteps"), this::handleProofAuto);
+            List.of("contractId", "timeoutMs", "maxSteps"),
+            anyOfSchema(proofAutoAsyncSchema, proofAutoSyncSchema),
+            annotations(false, true, false),
+            this::handleProofAuto);
 
         register(tools, "key_proof_status", "Get the status of a proof.",
             props("proofId", Map.of("type", "string")), List.of("proofId"),
+            proofStatusSchema, annotations(true, false, true),
             this::handleProofStatus);
 
         register(tools, "key_proof_goals_list", "List all open goals of a proof.",
             props("proofId", Map.of("type", "string")), List.of("proofId"),
+            proofGoalsListSchema, annotations(true, false, true),
             this::handleProofGoalsList);
 
         register(tools, "key_proof_goal_get", "Get the sequent of a specific open goal.",
             props(
                 "proofId", Map.of("type", "string"),
                 "goalId", Map.of("type", "integer")),
-            List.of("proofId", "goalId"), this::handleProofGoalGet);
+            List.of("proofId", "goalId"),
+            proofGoalGetSchema, annotations(true, false, true),
+            this::handleProofGoalGet);
 
         register(tools, "key_proof_rule_apply",
             "Apply a rule by name to the given goal. Use key_proof_rules_list to discover valid "
@@ -70,7 +178,9 @@ public class ProofToolHandler extends ToolHandler {
                 "ruleName", Map.of("type", "string"),
                 "parameters", Map.of("type", "object", "description",
                     "Additional rule options, e.g. {\"on\": \"x + y\", \"occ\": 1}")),
-            List.of("proofId", "goalId", "ruleName"), this::handleProofRuleApply);
+            List.of("proofId", "goalId", "ruleName"),
+            proofRuleApplySchema, annotations(false, true, false),
+            this::handleProofRuleApply);
 
         register(tools, "key_proof_script_run",
             "Run a KeY proof script on the current proof. Useful commands: auto, select "
@@ -79,7 +189,9 @@ public class ProofToolHandler extends ToolHandler {
             props(
                 "proofId", Map.of("type", "string"),
                 "script", Map.of("type", "string")),
-            List.of("proofId", "script"), this::handleProofScriptRun);
+            List.of("proofId", "script"),
+            proofScriptRunSchema, annotations(false, true, false),
+            this::handleProofScriptRun);
 
         register(tools, "key_proof_rules_list",
             "List rule names usable with key_proof_rule_apply: all built-in rules plus active "
@@ -88,13 +200,17 @@ public class ProofToolHandler extends ToolHandler {
             props(
                 "proofId", Map.of("type", "string"),
                 "filter", Map.of("type", "string")),
-            List.of("proofId"), this::handleProofRulesList);
+            List.of("proofId"),
+            proofRulesListSchema, annotations(true, false, true),
+            this::handleProofRulesList);
 
         register(tools, "key_proof_undo", "Undo the last rule application on the given goal.",
             props(
                 "proofId", Map.of("type", "string"),
                 "goalId", Map.of("type", "integer")),
-            List.of("proofId", "goalId"), this::handleProofUndo);
+            List.of("proofId", "goalId"),
+            proofUndoSchema, annotations(false, true, false),
+            this::handleProofUndo);
     }
 
     private Map<String, Object> handleProofCreate(Map<String, Object> params) {
@@ -143,6 +259,12 @@ public class ProofToolHandler extends ToolHandler {
                 worker.join(timeoutMs);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                // Protocol-level cancel interrupted the waiting thread. Cancel the operation too.
+                Thread workerThread = operation.getWorkerThread();
+                if (workerThread != null && workerThread.isAlive()) {
+                    workerThread.interrupt();
+                }
+                operation.addCancelledEvent();
                 throw new McpToolException(-32603, "Interrupted while waiting for proof",
                     e.getMessage());
             }
