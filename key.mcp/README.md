@@ -88,7 +88,11 @@ memory limits and client configuration see [docs/deployment.md](docs/deployment.
 
 ## Protocol
 
-- Transport: stdio JSON-RPC (MCP protocol version `2025-11-25`).
+- Transport: stdio JSON-RPC. The server is dual-era: it speaks the modern, stateless
+  revision `2026-07-28` (per-request `_meta` protocol fields, `server/discover`,
+  `resultType`, `ttlMs`/`cacheScope`) and the legacy handshake revision `2025-11-25`
+  (`initialize`) used by clients such as Claude Code. Modern clients should probe with
+  `server/discover`; legacy clients simply send `initialize`.
 - Single-client exclusive session: one KeY environment per process.
 - Tools are named with a `key_` prefix.
 - Tool results are returned both as MCP `content[]` (JSON text) and `structuredContent`.
@@ -99,12 +103,16 @@ memory limits and client configuration see [docs/deployment.md](docs/deployment.
 |---|---|
 | `-32700` | Parse error (malformed JSON). |
 | `-32600` | Invalid request, e.g. a second `initialize`. |
-| `-32601` | Unknown method or prompt. |
-| `-32602` | Invalid parameters: missing/blank required parameter, unknown contract, unknown export format, bad goal id. |
+| `-32601` | Unknown method (e.g. `ping` in the modern era). |
+| `-32602` | Invalid parameters: missing/blank required parameter, unknown tool, prompt or contract, unknown export format, bad goal id; in the modern era also resource/proof/operation not found. |
 | `-32603` | Internal error: project load failure, script failure, SMT failure, no open goals. |
-| `-32001` | Path rejected by the whitelist (`KEY_MCP_ALLOWED_PATHS`). |
-| `-32002` | Proof, goal or resource not found. |
-| `-32003` | Operation not found. |
+| `-32022` | Unsupported protocol version (modern era; `data.supported` lists the supported versions). |
+| `-32001` | Path rejected by the whitelist (`KEY_MCP_ALLOWED_PATHS`), legacy era only. |
+| `-32002` | Proof, goal or resource not found, legacy era only. |
+| `-32003` | Operation not found, legacy era only. |
+
+Error codes from the legacy sub-range `-32000..-32019` are translated to `-32602` when
+serving modern (`2026-07-28`) requests, as required by that revision.
 
 ## Tools
 

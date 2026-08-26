@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import de.uka.ilkd.key.mcp.protocol.McpProtocol;
 import de.uka.ilkd.key.mcp.session.McpSession;
 import de.uka.ilkd.key.mcp.tools.OperationToolHandler;
 import de.uka.ilkd.key.mcp.tools.ProjectToolHandler;
@@ -42,7 +43,9 @@ public class McpToolRegistry {
     public Map<String, Object> execute(String name, Map<String, Object> params) {
         ToolDefinition tool = tools.get(name);
         if (tool == null) {
-            throw new IllegalArgumentException("Tool not implemented: " + name);
+            // MCP prescribes -32602 (Invalid params) for unknown tool names.
+            throw new McpToolException(McpProtocol.INVALID_PARAMS,
+                "Unknown tool: " + name, null);
         }
         return tool.executor().execute(params);
     }

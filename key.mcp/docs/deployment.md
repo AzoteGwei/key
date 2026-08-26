@@ -49,6 +49,14 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
   | grep protocolVersion
 ```
 
+Modern (`2026-07-28`) clients can instead probe without a handshake:
+
+```sh
+echo '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' \
+  | java -jar key.mcp/build/libs/key-mcp-3.1.0-dev-all.jar 2>/dev/null \
+  | grep supportedVersions
+```
+
 ## 3. How projects are located (workspace + whitelist)
 
 All file access is governed by two rules:

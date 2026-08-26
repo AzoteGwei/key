@@ -7,6 +7,13 @@ package de.uka.ilkd.key.mcp;
  * Exception thrown when a request violates the security policy.
  */
 public class McpSecurityException extends RuntimeException {
+    /**
+     * Legacy-range, implementation-defined error code for security policy violations.
+     * On the wire it is translated per {@code McpProtocol.wireErrorCode} when serving
+     * modern (2026-07-28) requests.
+     */
+    public static final int CODE = -32001;
+
     public McpSecurityException(String message) {
         super(message);
     }

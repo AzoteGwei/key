@@ -17,21 +17,37 @@ public class McpPromptHandler {
     public List<Map<String, Object>> listPrompts() {
         List<Map<String, Object>> prompts = new ArrayList<>();
         prompts.add(prompt("verify_contract",
-            "Guide the agent through verifying a single KeY contract."));
+            "Guide the agent through verifying a single KeY contract.",
+            List.of(argument("contractId", "ID of the contract to verify (from "
+                + "key_contracts_list).", false))));
         prompts.add(prompt("verify_all_contracts",
-            "Verify all contracts of a loaded project and summarize the results."));
+            "Verify all contracts of a loaded project and summarize the results.",
+            List.of(argument("location",
+                "Path of the project directory or .key file to load.", false))));
         prompts.add(prompt("diagnose_open_goals",
-            "Inspect open goals of a proof and suggest the next interactive steps."));
+            "Inspect open goals of a proof and suggest the next interactive steps.",
+            List.of(argument("proofId", "ID of the proof to diagnose.", false))));
         prompts.add(prompt("extract_counterexample",
-            "Try to obtain a counterexample for a falsifiable goal via the SMT solver."));
+            "Try to obtain a counterexample for a falsifiable goal via the SMT solver.",
+            List.of(argument("proofId", "ID of the proof to analyze.", false))));
         return prompts;
     }
 
-    private Map<String, Object> prompt(String name, String description) {
+    private Map<String, Object> prompt(String name, String description,
+            List<Map<String, Object>> arguments) {
         Map<String, Object> p = Json.object();
         p.put("name", name);
         p.put("description", description);
+        p.put("arguments", arguments);
         return p;
+    }
+
+    private Map<String, Object> argument(String name, String description, boolean required) {
+        Map<String, Object> a = Json.object();
+        a.put("name", name);
+        a.put("description", description);
+        a.put("required", required);
+        return a;
     }
 
     public Map<String, Object> getPrompt(String name, Map<String, Object> arguments) {
@@ -40,7 +56,8 @@ public class McpPromptHandler {
             case "verify_all_contracts" -> verifyAllContracts(arguments);
             case "diagnose_open_goals" -> diagnoseOpenGoals(arguments);
             case "extract_counterexample" -> extractCounterexample(arguments);
-            default -> throw new McpToolException(-32601, "Prompt not found: " + name, null);
+            // MCP prescribes -32602 (Invalid params) for unknown prompt names.
+            default -> throw new McpToolException(-32602, "Prompt not found: " + name, null);
         };
     }
 

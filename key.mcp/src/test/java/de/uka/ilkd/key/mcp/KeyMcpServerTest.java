@@ -587,4 +587,213 @@ class KeyMcpServerTest {
             }
         }
     }
+
+    // --- Protocol version alignment (dual-era: 2025-11-25 legacy + 2026-07-28 modern) ---
+
+    private static final String MODERN_META =
+        "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\","
+            + "\"io.modelcontextprotocol/clientCapabilities\":{}}";
+
+    private Map<String, Object> lastResponse(KeyMcpServer server) {
+        TestTransport transport = (TestTransport) server.transport;
+        return Json.parseObject(
+            transport.getSentMessages().get(transport.getSentMessages().size() - 1));
+    }
+
+    @Test
+    void discoverReturnsSupportedVersionsAndModernShape() {
+        KeyMcpServer server = createServer();
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\",\"params\":{"
+                + MODERN_META + "}}");
+        Map<String, Object> response = lastResponse(server);
+        assertNoError(response);
+        Map<String, Object> result = (Map<String, Object>) response.get("result");
+        assertThat(result.get("resultType")).isEqualTo("complete");
+        assertThat((List<String>) result.get("supportedVersions"))
+                .containsExactly("2026-07-28", "2025-11-25");
+        assertThat(result.get("capabilities")).isNotNull();
+        assertThat(result.get("instructions")).isNotNull();
+        assertThat(result.get("ttlMs")).isNotNull();
+        assertThat(result.get("cacheScope")).isEqualTo("public");
+        Map<String, Object> meta = (Map<String, Object>) result.get("_meta");
+        Map<String, Object> serverInfo =
+            (Map<String, Object>) meta.get("io.modelcontextprotocol/serverInfo");
+        assertThat(serverInfo.get("name")).isEqualTo("key-mcp");
+    }
+
+    /**
+     * Dual-era clients probe with server/discover on stdio; the probe must succeed even
+     * if the client forgot the _meta fields, otherwise it would misclassify this server
+     * as legacy.
+     */
+    @Test
+    void discoverWithoutMetaStillAnswers() {
+        KeyMcpServer server = createServer();
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\",\"params\":{}}");
+        Map<String, Object> response = lastResponse(server);
+        assertNoError(response);
+        Map<String, Object> result = (Map<String, Object>) response.get("result");
+        assertThat(result.get("resultType")).isEqualTo("complete");
+        assertThat((List<?>) result.get("supportedVersions")).isNotEmpty();
+    }
+
+    @Test
+    void modernRequestsAreStatelessAndCarryResultType() {
+        KeyMcpServer server = createServer();
+        // No initialize: a modern request must work on its own.
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{"
+                + MODERN_META + "}}");
+        Map<String, Object> response = lastResponse(server);
+        assertNoError(response);
+        Map<String, Object> result = (Map<String, Object>) response.get("result");
+        assertThat(result.get("resultType")).isEqualTo("complete");
+        assertThat(result.get("ttlMs")).isNotNull();
+        assertThat(result.get("cacheScope")).isEqualTo("public");
+        assertThat((List<?>) result.get("tools")).isNotEmpty();
+
+        // A subsequent modern tools/call must work without any prior handshake, too.
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"key_session_info\",\"arguments\":{},"
+                + MODERN_META + "}}");
+        Map<String, Object> callResponse = lastResponse(server);
+        assertNoError(callResponse);
+        Map<String, Object> callResult = (Map<String, Object>) callResponse.get("result");
+        assertThat(callResult.get("resultType")).isEqualTo("complete");
+        assertThat(callResult.get("structuredContent")).isNotNull();
+        Map<String, Object> meta = (Map<String, Object>) callResult.get("_meta");
+        assertThat(meta.get("io.modelcontextprotocol/serverInfo")).isNotNull();
+    }
+
+    @Test
+    void unsupportedProtocolVersionYieldsModernError() {
+        KeyMcpServer server = createServer();
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"1900-01-01\",\"io.modelcontextprotocol/clientCapabilities\":{}}}}");
+        Map<String, Object> response = lastResponse(server);
+        Map<String, Object> error = (Map<String, Object>) response.get("error");
+        assertThat(error).isNotNull();
+        assertThat(error.get("code")).isEqualTo(-32022);
+        Map<String, Object> data = (Map<String, Object>) error.get("data");
+        assertThat((List<String>) data.get("supported")).contains("2026-07-28", "2025-11-25");
+        assertThat(data.get("requested")).isEqualTo("1900-01-01");
+    }
+
+    @Test
+    void modernRequestWithoutCapabilitiesIsRejected() {
+        KeyMcpServer server = createServer();
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}}");
+        Map<String, Object> response = lastResponse(server);
+        Map<String, Object> error = (Map<String, Object>) response.get("error");
+        assertThat(error).isNotNull();
+        assertThat(error.get("code")).isEqualTo(-32602);
+    }
+
+    @Test
+    void requestWithoutInitializeOrMetaIsRejected() {
+        KeyMcpServer server = createServer();
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}");
+        Map<String, Object> response = lastResponse(server);
+        Map<String, Object> error = (Map<String, Object>) response.get("error");
+        assertThat(error).isNotNull();
+        assertThat(error.get("code")).isEqualTo(-32602);
+    }
+
+    /**
+     * Regression guard for strict legacy clients (e.g. Claude Code): legacy-era results
+     * must not carry modern-only fields such as resultType/ttlMs.
+     */
+    @Test
+    void legacyResultsKeepLegacyShape() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
+        Map<String, Object> result = (Map<String, Object>) lastResponse(server).get("result");
+        assertThat(result).doesNotContainKeys("resultType", "ttlMs", "cacheScope");
+        assertThat((List<?>) result.get("tools")).isNotEmpty();
+
+        // ping exists in the legacy era.
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\",\"params\":{}}");
+        assertNoError(lastResponse(server));
+    }
+
+    @Test
+    void pingDoesNotExistInModernEra() {
+        KeyMcpServer server = createServer();
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"params\":{"
+                + MODERN_META + "}}");
+        Map<String, Object> error = (Map<String, Object>) lastResponse(server).get("error");
+        assertThat(error).isNotNull();
+        assertThat(error.get("code")).isEqualTo(-32601);
+    }
+
+    @Test
+    void unknownToolIsInvalidParams() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"key_no_such_tool\",\"arguments\":{}}}");
+        Map<String, Object> error = (Map<String, Object>) lastResponse(server).get("error");
+        assertThat(error).isNotNull();
+        assertThat(error.get("code")).isEqualTo(-32602);
+    }
+
+    @Test
+    void unknownPromptIsInvalidParams() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"prompts/get\",\"params\":{\"name\":\"no_such_prompt\"}}");
+        Map<String, Object> error = (Map<String, Object>) lastResponse(server).get("error");
+        assertThat(error).isNotNull();
+        assertThat(error.get("code")).isEqualTo(-32602);
+    }
+
+    @Test
+    void resourceNotFoundErrorCodeDependsOnEra() {
+        // Legacy era: -32002 (resource not found, 2025-11-25 and earlier).
+        KeyMcpServer legacyServer = createServer();
+        initialize(legacyServer);
+        legacyServer.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"resources/read\",\"params\":{\"uri\":\"unknown:///x\"}}");
+        Map<String, Object> legacyError =
+            (Map<String, Object>) lastResponse(legacyServer).get("error");
+        assertThat(legacyError).isNotNull();
+        assertThat(legacyError.get("code")).isEqualTo(-32002);
+
+        // Modern era: -32602 (Invalid params), per the 2026-07-28 revision.
+        KeyMcpServer modernServer = createServer();
+        modernServer.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"resources/read\",\"params\":{\"uri\":\"unknown:///x\","
+                + MODERN_META + "}}");
+        Map<String, Object> modernError =
+            (Map<String, Object>) lastResponse(modernServer).get("error");
+        assertThat(modernError).isNotNull();
+        assertThat(modernError.get("code")).isEqualTo(-32602);
+    }
+
+    @Test
+    void modernResourceReadIsCacheableResult() {
+        KeyMcpServer server = createServer();
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"resources/read\",\"params\":{\"uri\":\"session:///info\","
+                + MODERN_META + "}}");
+        Map<String, Object> response = lastResponse(server);
+        assertNoError(response);
+        Map<String, Object> result = (Map<String, Object>) response.get("result");
+        assertThat(result.get("resultType")).isEqualTo("complete");
+        assertThat(result.get("ttlMs")).isEqualTo(0);
+        assertThat(result.get("cacheScope")).isEqualTo("public");
+        List<?> contents = (List<?>) result.get("contents");
+        Map<String, Object> content = (Map<String, Object>) contents.get(0);
+        assertThat(content.get("uri")).isEqualTo("session:///info");
+        assertThat(content.get("text")).isInstanceOf(String.class);
+    }
 }
