@@ -15,6 +15,17 @@ public final class PathValidator {
     }
 
     /**
+     * Resolves a path string against the workspace without checking the whitelist.
+     */
+    public static Path resolve(String raw, Path workspace) {
+        Path path = Paths.get(raw);
+        if (!path.isAbsolute()) {
+            path = workspace.resolve(path);
+        }
+        return path.toAbsolutePath().normalize();
+    }
+
+    /**
      * Resolves a path string against the workspace and checks it against the whitelist.
      *
      * @param raw the raw path string
@@ -24,11 +35,7 @@ public final class PathValidator {
      * @throws McpSecurityException if the path is outside the whitelist
      */
     public static Path resolveAndValidate(String raw, Path workspace, List<Path> allowedPaths) {
-        Path path = Paths.get(raw);
-        if (!path.isAbsolute()) {
-            path = workspace.resolve(path);
-        }
-        path = path.toAbsolutePath().normalize();
+        Path path = resolve(raw, workspace);
         for (Path allowed : allowedPaths) {
             if (path.startsWith(allowed.normalize())) {
                 return path;

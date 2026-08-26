@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 
 import de.uka.ilkd.key.mcp.McpToolException;
-import de.uka.ilkd.key.mcp.PathValidator;
 import de.uka.ilkd.key.mcp.json.Json;
 import de.uka.ilkd.key.proof.Proof;
 
@@ -103,8 +102,7 @@ public class ProofExportToolHandler extends ToolHandler {
             case "proof": {
                 String content = ctx.exportProofText(proof);
                 if (path != null) {
-                    Path target = PathValidator.resolveAndValidate(path, ctx.config().workspace(),
-                        ctx.config().allowedPaths());
+                    Path target = ctx.resolveAndValidate(path, "key_proof_export");
                     try {
                         Files.writeString(target, content);
                     } catch (java.io.IOException e) {

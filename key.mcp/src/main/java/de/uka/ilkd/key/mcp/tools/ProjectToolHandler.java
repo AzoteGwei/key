@@ -10,7 +10,6 @@ import java.util.Map;
 
 import de.uka.ilkd.key.control.KeYEnvironment;
 import de.uka.ilkd.key.mcp.McpToolException;
-import de.uka.ilkd.key.mcp.PathValidator;
 import de.uka.ilkd.key.mcp.json.Json;
 import de.uka.ilkd.key.proof.io.ProblemLoaderException;
 
@@ -56,15 +55,14 @@ public class ProjectToolHandler extends ToolHandler {
 
     private Map<String, Object> handleProjectLoad(Map<String, Object> params) {
         String location = ToolContext.requireString(params, "location");
-        Path projectPath = PathValidator.resolveAndValidate(location, ctx.config().workspace(),
-            ctx.config().allowedPaths());
+        Path projectPath = ctx.resolveAndValidate(location, "key_project_load");
 
         // All file parameters follow the same rules as 'location': relative paths are
         // resolved against the workspace and every path must pass the whitelist.
         List<Path> classPaths = resolvePathList(params.get("classPaths"));
         Path bootClassPath = params.get("bootClassPath") == null ? null
-                : PathValidator.resolveAndValidate(params.get("bootClassPath").toString(),
-                    ctx.config().workspace(), ctx.config().allowedPaths());
+                : ctx.resolveAndValidate(params.get("bootClassPath").toString(),
+                    "key_project_load");
         List<Path> includes = resolvePathList(params.get("includes"));
 
         try {
@@ -102,8 +100,7 @@ public class ProjectToolHandler extends ToolHandler {
         }
         List<Path> paths = new ArrayList<>();
         for (Object o : list) {
-            paths.add(PathValidator.resolveAndValidate(o.toString(), ctx.config().workspace(),
-                ctx.config().allowedPaths()));
+            paths.add(ctx.resolveAndValidate(o.toString(), "key_project_load"));
         }
         return paths;
     }

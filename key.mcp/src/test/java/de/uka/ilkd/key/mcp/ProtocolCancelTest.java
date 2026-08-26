@@ -26,7 +26,7 @@ class ProtocolCancelTest {
         McpServerConfig config = new McpServerConfig(
             root,
             List.of(root),
-            60000L, 10000L, List.of());
+            60000L, 10000L, List.of(), 60000L);
         return new KeyMcpServer(transport, config);
     }
 

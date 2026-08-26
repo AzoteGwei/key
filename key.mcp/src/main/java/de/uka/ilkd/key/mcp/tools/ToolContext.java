@@ -4,15 +4,22 @@
 package de.uka.ilkd.key.mcp.tools;
 
 import java.io.ByteArrayOutputStream;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import de.uka.ilkd.key.control.AbstractUserInterfaceControl;
+import de.uka.ilkd.key.mcp.KeyMcpServer;
+import de.uka.ilkd.key.mcp.McpSecurityException;
 import de.uka.ilkd.key.mcp.McpServerConfig;
 import de.uka.ilkd.key.mcp.McpToolException;
+import de.uka.ilkd.key.mcp.PathValidator;
 import de.uka.ilkd.key.mcp.json.Json;
 import de.uka.ilkd.key.mcp.operation.Operation;
+import de.uka.ilkd.key.mcp.protocol.McpProtocol;
 import de.uka.ilkd.key.mcp.session.McpSession;
 import de.uka.ilkd.key.nparser.KeyAst;
 import de.uka.ilkd.key.nparser.ParsingFacade;
@@ -35,16 +42,26 @@ import de.uka.ilkd.key.smt.solvertypes.SolverType;
 import de.uka.ilkd.key.smt.solvertypes.SolverTypes;
 import de.uka.ilkd.key.speclang.Contract;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Shared state and helper methods used by all MCP tool handlers.
  */
 public class ToolContext {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ToolContext.class);
     private final McpServerConfig config;
     private final McpSession session;
+    private final KeyMcpServer server;
 
     public ToolContext(McpServerConfig config, McpSession session) {
+        this(config, session, null);
+    }
+
+    public ToolContext(McpServerConfig config, McpSession session, KeyMcpServer server) {
         this.config = config;
         this.session = session;
+        this.server = server;
     }
 
     public McpServerConfig config() {
@@ -53,6 +70,104 @@ public class ToolContext {
 
     public McpSession session() {
         return session;
+    }
+
+    /**
+     * Resolves and validates a path. If the path is outside the configured whitelist and
+     * the client is a legacy client with elicitation capability, an interactive
+     * confirmation is sent; otherwise a security exception is thrown.
+     *
+     * @param raw the raw path string
+     * @param toolName the name of the tool requesting access
+     * @return the resolved, normalized absolute path
+     */
+    public Path resolveAndValidate(String raw, String toolName) {
+        Path path = PathValidator.resolve(raw, config.workspace());
+        if (isPathAllowed(path)) {
+            return path;
+        }
+        if (isModernRequest()) {
+            throw new McpToolException(McpProtocol.INVALID_PARAMS,
+                "Path not allowed: " + raw, null);
+        }
+        if (!session.hasElicitationCapability() || server == null) {
+            throw new McpSecurityException("Path not allowed: " + raw);
+        }
+        return requestPathConfirmation(path, toolName);
+    }
+
+    private boolean isPathAllowed(Path path) {
+        if (session.isPathAllowed(path)) {
+            return true;
+        }
+        for (Path allowed : config.allowedPaths()) {
+            if (path.startsWith(allowed.normalize())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Path requestPathConfirmation(Path path, String toolName) {
+        LOGGER.info("Eliciting confirmation for {} accessing {}", toolName, path);
+        String message = String.format(
+            "%s: tool '%s' wants to access %s, which is outside the configured whitelist. "
+                + "Allowing access may expose sensitive files.",
+            "key-mcp", toolName, path);
+        Map<String, Object> decisionSchema = Map.of(
+            "type", "string",
+            "enum", List.of("allow_once", "allow_session", "deny"),
+            "description", "Access decision");
+        Map<String, Object> requestedSchema = Json.object();
+        requestedSchema.put("type", "object");
+        requestedSchema.put("properties", Map.of("decision", decisionSchema));
+        requestedSchema.put("required", List.of("decision"));
+        Map<String, Object> params = Json.object();
+        params.put("message", message);
+        params.put("requestedSchema", requestedSchema);
+
+        CompletableFuture<Map<String, Object>> future =
+            server.sendClientRequest("elicitation/create", params);
+        try {
+            Map<String, Object> result =
+                future.get(config.elicitationTimeoutMs(), TimeUnit.MILLISECONDS);
+            String action = (String) result.get("action");
+            if (!"accept".equals(action)) {
+                LOGGER.warn("Elicitation declined for {} accessing {}", toolName, path);
+                throw new McpSecurityException("Path not allowed: " + path);
+            }
+            Object resultData = result.get("result");
+            String decision = null;
+            if (resultData instanceof Map<?, ?> data) {
+                decision = (String) data.get("decision");
+            }
+            if ("allow_session".equals(decision)) {
+                session.allowPath(path);
+                LOGGER.info("Session-allowed path {} for {}", path, toolName);
+            } else if ("allow_once".equals(decision)) {
+                LOGGER.info("One-time allowed path {} for {}", path, toolName);
+            } else {
+                LOGGER.warn("Elicitation denied for {} accessing {}", toolName, path);
+                throw new McpSecurityException("Path not allowed: " + path);
+            }
+            return path;
+        } catch (McpSecurityException e) {
+            throw e;
+        } catch (Exception e) {
+            Throwable cause = e instanceof java.util.concurrent.ExecutionException
+                    ? e.getCause()
+                    : e;
+            LOGGER.warn("Elicitation failed for {} accessing {}: {}", toolName, path,
+                cause.getMessage());
+            throw new McpSecurityException("Path not allowed: " + path);
+        }
+    }
+
+    /**
+     * Returns whether the current request is a modern-era (2026-07-28) request.
+     */
+    public boolean isModernRequest() {
+        return KeyMcpServer.isModernRequest();
     }
 
     public void ensureEnvironment() {

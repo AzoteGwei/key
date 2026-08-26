@@ -9,6 +9,8 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.Executors;
 
 import de.uka.ilkd.key.mcp.transport.StdioTransport;
 
@@ -20,7 +22,7 @@ class TestTransport extends StdioTransport {
 
     TestTransport() {
         super(InputStream.nullInputStream(), OutputStream.nullOutputStream(), m -> {
-        });
+        }, Set::of, Executors.newSingleThreadExecutor());
     }
 
     @Override

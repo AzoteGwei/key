@@ -25,7 +25,7 @@ class KeyMcpServerTest {
         McpServerConfig config = new McpServerConfig(
             root,
             List.of(root),
-            60000L, 10000L, smtSolvers);
+            60000L, 10000L, smtSolvers, 60000L);
         return new KeyMcpServer(transport, config);
     }
 

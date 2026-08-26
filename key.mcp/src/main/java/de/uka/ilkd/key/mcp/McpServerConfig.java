@@ -18,7 +18,8 @@ public record McpServerConfig(
         List<Path> allowedPaths,
         long defaultTimeoutMs,
         long defaultMaxSteps,
-        List<String> allowedSmtSolvers) {
+        List<String> allowedSmtSolvers,
+        long elicitationTimeoutMs) {
 
     /**
      * Reads configuration from environment variables.
@@ -36,8 +37,10 @@ public record McpServerConfig(
             Long.parseLong(System.getenv().getOrDefault("KEY_MCP_DEFAULT_MAX_STEPS", "10000"));
         List<String> allowedSmtSolvers =
             parseStringList(System.getenv().getOrDefault("KEY_MCP_SMT_SOLVERS", ""));
+        long elicitationTimeoutMs =
+            Long.parseLong(System.getenv().getOrDefault("KEY_MCP_ELICITATION_TIMEOUT_MS", "60000"));
         return new McpServerConfig(workspace, allowedPaths, defaultTimeoutMs, defaultMaxSteps,
-            allowedSmtSolvers);
+            allowedSmtSolvers, elicitationTimeoutMs);
     }
 
     private static List<Path> parsePathList(String value) {

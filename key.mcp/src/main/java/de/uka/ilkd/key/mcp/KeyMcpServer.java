@@ -10,13 +10,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import de.uka.ilkd.key.mcp.json.Json;
 import de.uka.ilkd.key.mcp.json.JsonParseException;
 import de.uka.ilkd.key.mcp.protocol.JsonRpcCodec;
 import de.uka.ilkd.key.mcp.protocol.McpProtocol;
 import de.uka.ilkd.key.mcp.protocol.McpRequest;
+import de.uka.ilkd.key.mcp.protocol.McpResponse;
 import de.uka.ilkd.key.mcp.session.McpSession;
 import de.uka.ilkd.key.mcp.tools.ToolContext;
 import de.uka.ilkd.key.mcp.transport.StdioTransport;
@@ -51,6 +54,9 @@ import org.slf4j.LoggerFactory;
 public class KeyMcpServer {
     private static final Logger LOGGER = LoggerFactory.getLogger(KeyMcpServer.class);
 
+    private static final ThreadLocal<Boolean> MODERN_REQUEST =
+        ThreadLocal.withInitial(() -> false);
+
     private static final String SERVER_NAME = "key-mcp";
     private static final String SERVER_VERSION = "3.1.0-dev";
 
@@ -72,6 +78,9 @@ public class KeyMcpServer {
 
     private final Set<Object> cancelledRequests = Collections.synchronizedSet(new HashSet<>());
     private final Map<Object, Thread> inFlightRequests = new ConcurrentHashMap<>();
+    private final Map<Object, CompletableFuture<Map<String, Object>>> pendingServerRequests =
+        new ConcurrentHashMap<>();
+    private final AtomicInteger serverRequestCounter = new AtomicInteger();
 
     public KeyMcpServer(StdioTransport transport) {
         this(transport, McpServerConfig.fromEnvironment());
@@ -91,12 +100,26 @@ public class KeyMcpServer {
 
     public static KeyMcpServer stdio(McpServerConfig config) {
         KeyMcpServer server = new KeyMcpServer(null, config);
-        StdioTransport transport = new StdioTransport(System.in, System.out, server::handleMessage);
+        StdioTransport transport = new StdioTransport(System.in, System.out, server::handleMessage,
+            () -> server.pendingServerRequestIds());
         server.transport = transport;
         return server;
     }
 
     void handleMessage(String message) {
+        // First check if this is a response to a server-to-client request (e.g. an
+        // elicitation answer). Such responses must be handled directly and not dispatched.
+        Object responseId;
+        try {
+            responseId = JsonRpcCodec.parseResponseId(message);
+        } catch (JsonParseException e) {
+            responseId = null;
+        }
+        if (responseId != null && pendingServerRequests.containsKey(responseId)) {
+            handleServerResponse(message, responseId);
+            return;
+        }
+
         McpRequest request = null;
         boolean cancelled = false;
         try {
@@ -135,6 +158,66 @@ public class KeyMcpServer {
                 JsonRpcCodec.encodeError(null, -32603, "Internal error: " + e.getMessage(), null);
             transport.send(errorJson);
         }
+    }
+
+    private void handleServerResponse(String message, Object responseId) {
+        try {
+            McpResponse response = JsonRpcCodec.parseResponse(message);
+            CompletableFuture<Map<String, Object>> future =
+                pendingServerRequests.remove(responseId);
+            if (future == null) {
+                return;
+            }
+            if (response.error() != null) {
+                future.completeExceptionally(
+                    new McpElicitationException("Elicitation request failed: "
+                        + response.error().message()));
+            } else {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> result =
+                    response.result() instanceof Map ? (Map<String, Object>) response.result()
+                            : Map.of();
+                future.complete(result);
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to parse server response: {}", message, e);
+            CompletableFuture<Map<String, Object>> future =
+                pendingServerRequests.remove(responseId);
+            if (future != null) {
+                future.completeExceptionally(e);
+            }
+        }
+    }
+
+    /**
+     * Sends a server-to-client request and returns a future that will be completed when the
+     * client replies or times out.
+     */
+    public CompletableFuture<Map<String, Object>> sendClientRequest(String method,
+            Map<String, Object> params) {
+        String id = "srv-elicit-" + serverRequestCounter.incrementAndGet();
+        String request = JsonRpcCodec.encodeRequest(id, method, params);
+        CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
+        pendingServerRequests.put(id, future);
+        transport.send(request);
+        return future;
+    }
+
+    /**
+     * Returns the ids of pending server-to-client requests so the transport can route
+     * matching responses directly.
+     */
+    Set<Object> pendingServerRequestIds() {
+        return pendingServerRequests.keySet();
+    }
+
+    /**
+     * Returns whether the currently executing tool handler is serving a modern-era
+     * request. Tool handlers use this to decide whether legacy-only features such as
+     * elicitation are available.
+     */
+    public static boolean isModernRequest() {
+        return MODERN_REQUEST.get();
     }
 
     private boolean isCancelled(Object id) {
@@ -215,16 +298,21 @@ public class KeyMcpServer {
     }
 
     private String dispatch(McpRequest request, boolean modern) {
-        return switch (request.method()) {
-            case "ping" -> modern ? methodNotFound(request) : handlePing(request);
-            case "tools/list" -> handleToolsList(request, modern);
-            case "tools/call" -> handleToolsCall(request, modern);
-            case "resources/list" -> handleResourcesList(request, modern);
-            case "resources/read" -> handleResourcesRead(request, modern);
-            case "prompts/list" -> handlePromptsList(request, modern);
-            case "prompts/get" -> handlePromptsGet(request, modern);
-            default -> methodNotFound(request);
-        };
+        MODERN_REQUEST.set(modern);
+        try {
+            return switch (request.method()) {
+                case "ping" -> modern ? methodNotFound(request) : handlePing(request);
+                case "tools/list" -> handleToolsList(request, modern);
+                case "tools/call" -> handleToolsCall(request, modern);
+                case "resources/list" -> handleResourcesList(request, modern);
+                case "resources/read" -> handleResourcesRead(request, modern);
+                case "prompts/list" -> handlePromptsList(request, modern);
+                case "prompts/get" -> handlePromptsGet(request, modern);
+                default -> methodNotFound(request);
+            };
+        } finally {
+            MODERN_REQUEST.remove();
+        }
     }
 
     private String methodNotFound(McpRequest request) {
@@ -239,7 +327,7 @@ public class KeyMcpServer {
     private void ensureSession() {
         if (session == null) {
             session = new McpSession(UUID.randomUUID().toString());
-            ToolContext toolContext = new ToolContext(config, session);
+            ToolContext toolContext = new ToolContext(config, session, this);
             toolRegistry = new McpToolRegistry(toolContext);
             resourceHandler = new McpResourceHandler(toolContext);
             promptHandler = new McpPromptHandler();
@@ -260,6 +348,13 @@ public class KeyMcpServer {
         }
         initialized = true;
         ensureSession();
+
+        Object caps = request.params().get("capabilities");
+        if (caps instanceof Map<?, ?> clientCaps) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> typed = (Map<String, Object>) clientCaps;
+            session.setClientCapabilities(typed);
+        }
 
         // Legacy version negotiation: 2025-11-25 is the only legacy revision this server
         // supports. If the client requested a different version (including a modern one

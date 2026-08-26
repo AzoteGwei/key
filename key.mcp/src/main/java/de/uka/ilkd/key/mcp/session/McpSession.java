@@ -3,10 +3,14 @@
  * SPDX-License-Identifier: GPL-2.0-only */
 package de.uka.ilkd.key.mcp.session;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import de.uka.ilkd.key.control.KeYEnvironment;
 import de.uka.ilkd.key.java.ast.abstraction.KeYJavaType;
@@ -29,6 +33,8 @@ public class McpSession {
     private final Map<String, Proof> proofs = new LinkedHashMap<>();
     private final OperationTracker operationTracker = new OperationTracker();
     private int proofCounter;
+    private Map<String, Object> clientCapabilities = Map.of();
+    private final Set<Path> sessionAllowedPaths = Collections.synchronizedSet(new HashSet<>());
 
     public McpSession(String id) {
         this.id = id;
@@ -121,6 +127,42 @@ public class McpSession {
 
     public OperationTracker getOperationTracker() {
         return operationTracker;
+    }
+
+    /**
+     * Stores the client capabilities declared during the legacy {@code initialize} handshake.
+     */
+    public void setClientCapabilities(Map<String, Object> capabilities) {
+        this.clientCapabilities = capabilities != null ? capabilities : Map.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> experimentalCapabilities() {
+        Object experimental = clientCapabilities.get("experimental");
+        return experimental instanceof Map ? (Map<String, Object>) experimental : Map.of();
+    }
+
+    /**
+     * Returns whether the client declared support for the elicitation capability.
+     */
+    public boolean hasElicitationCapability() {
+        return Boolean.TRUE.equals(clientCapabilities.get("elicitation"))
+                || Boolean.TRUE.equals(experimentalCapabilities().get("elicitation"));
+    }
+
+    /**
+     * Adds a path to the session-level authorization cache.
+     */
+    public void allowPath(Path path) {
+        sessionAllowedPaths.add(path);
+    }
+
+    /**
+     * Checks whether a path has been authorized at session level (in addition to the
+     * configured whitelist).
+     */
+    public boolean isPathAllowed(Path path) {
+        return sessionAllowedPaths.contains(path);
     }
 
     /**

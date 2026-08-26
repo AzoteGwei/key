@@ -34,6 +34,43 @@ public final class JsonRpcCodec {
         return new McpRequest(id, (String) method, paramsMap);
     }
 
+    /**
+     * Returns the id of a JSON-RPC response, or {@code null} if the line is not a
+     * response (i.e. it has a method field or lacks both result and error).
+     */
+    public static Object parseResponseId(String line) {
+        Map<String, Object> map = Json.parseObject(line);
+        if (map.containsKey("method")) {
+            return null;
+        }
+        if (!map.containsKey("result") && !map.containsKey("error")) {
+            return null;
+        }
+        return map.get("id");
+    }
+
+    /**
+     * Parses a JSON-RPC response line.
+     *
+     * @param line the raw JSON text
+     * @return the parsed response
+     * @throws JsonParseException if the line is not a valid JSON-RPC response
+     */
+    public static McpResponse parseResponse(String line) {
+        Map<String, Object> map = Json.parseObject(line);
+        Object id = map.get("id");
+        Object result = map.get("result");
+        Object error = map.get("error");
+        McpError mcpError = null;
+        if (error instanceof Map<?, ?> errMap) {
+            mcpError = new McpError(
+                ((Number) errMap.get("code")).intValue(),
+                (String) errMap.get("message"),
+                errMap.get("data"));
+        }
+        return new McpResponse(id, result, mcpError);
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> castMap(Object value) {
         return (Map<String, Object>) value;
@@ -64,6 +101,18 @@ public final class JsonRpcCodec {
             error.put("data", data);
         }
         map.put("error", error);
+        return Json.stringify(map);
+    }
+
+    /**
+     * Encodes a JSON-RPC request.
+     */
+    public static String encodeRequest(Object id, String method, Object params) {
+        Map<String, Object> map = Json.object();
+        map.put("jsonrpc", "2.0");
+        map.put("id", id);
+        map.put("method", method);
+        map.put("params", params);
         return Json.stringify(map);
     }
 
