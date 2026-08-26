@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import de.uka.ilkd.key.mcp.json.Json;
+import de.uka.ilkd.key.mcp.protocol.ResourceContents;
 import de.uka.ilkd.key.mcp.session.McpSession;
 import de.uka.ilkd.key.mcp.tools.ToolContext;
 import de.uka.ilkd.key.proof.Goal;
@@ -15,6 +16,13 @@ import de.uka.ilkd.key.proof.Proof;
 
 /**
  * Handles MCP resources.
+ *
+ * <p>
+ * Resource readers only produce a {@link Payload} (MIME type + text); the final
+ * {@code contents} item is assembled in {@link #readResource(String)} via
+ * {@link ResourceContents}, which guarantees the schema-mandated {@code uri} and
+ * {@code text} fields are always present.
+ * </p>
  */
 public class McpResourceHandler {
     private final McpSession session;
@@ -54,6 +62,11 @@ public class McpResourceHandler {
     }
 
     public Map<String, Object> readResource(String uri) {
+        Payload payload = readPayload(uri);
+        return ResourceContents.text(uri, payload.mimeType(), payload.text());
+    }
+
+    private Payload readPayload(String uri) {
         if (uri.startsWith("session://")) {
             return readSessionInfo();
         } else if (uri.startsWith("project://")) {
@@ -66,20 +79,28 @@ public class McpResourceHandler {
         throw new McpToolException(-32002, "Resource not found: " + uri, null);
     }
 
-    private Map<String, Object> readSessionInfo() {
+    /**
+     * MIME type and textual payload of a resource, without the envelope fields
+     * ({@code uri}, {@code text}) that the MCP schema requires on content items.
+     */
+    private record Payload(String mimeType, String text) {
+    }
+
+    private Payload readSessionInfo() {
         Map<String, Object> result = Json.object();
         result.put("sessionId", session.getId());
         result.put("environmentLoaded", session.getEnvironment() != null);
         result.put("contractCount", session.getContracts().size());
         result.put("proofCount", session.getProofs().size());
-        return result;
+        return new Payload("application/json", Json.stringify(result));
     }
 
-    private Map<String, Object> readContracts() {
-        return Map.of("contracts", ctx.contractsListJson());
+    private Payload readContracts() {
+        return new Payload("application/json",
+            Json.stringify(Map.of("contracts", ctx.contractsListJson())));
     }
 
-    private Map<String, Object> readProofResource(String uri) {
+    private Payload readProofResource(String uri) {
         String[] parts = uri.substring("proof://".length()).split("/");
         if (parts.length < 2) {
             throw new McpToolException(-32602, "Invalid proof URI: " + uri, null);
@@ -91,15 +112,11 @@ public class McpResourceHandler {
             throw new McpToolException(-32002, "Proof not found: " + proofId, null);
         }
 
-        Map<String, Object> result = Json.object();
-        result.put("uri", uri);
         switch (suffix) {
             case "status":
-                result.put("text", statusText(proof));
-                break;
+                return new Payload("application/json", statusText(proof));
             case "goals":
-                result.put("text", goalsJson(proof));
-                break;
+                return new Payload("application/json", goalsJson(proof));
             case "goal":
                 if (parts.length < 3) {
                     throw new McpToolException(-32602, "Missing goal id in URI: " + uri, null);
@@ -110,33 +127,29 @@ public class McpResourceHandler {
                 } catch (NumberFormatException e) {
                     throw new McpToolException(-32602, "Invalid goal id in URI: " + uri, null);
                 }
-                result.put("text", goalJson(proof, goalId));
-                break;
+                return new Payload("application/json", goalJson(proof, goalId));
             case "tree":
-                result.put("text", Json.stringify(ctx.proofTreeJson(proof.root())));
-                break;
+                return new Payload("application/json",
+                    Json.stringify(ctx.proofTreeJson(proof.root())));
             case "export":
-                result.put("text", ctx.exportProofText(proof));
-                break;
+                return new Payload("text/plain", ctx.exportProofText(proof));
             case "smt":
                 if (proof.openGoals().isEmpty()) {
-                    result.put("text", "// Proof is closed; no SMT problem available.");
+                    return new Payload("text/plain",
+                        "// Proof is closed; no SMT problem available.");
                 } else {
-                    result.put("text", ctx.smtText(proof));
+                    return new Payload("text/plain", ctx.smtText(proof));
                 }
-                break;
             case "counterexample":
-                result.put("text",
+                return new Payload("application/json",
                     Json.stringify(ctx.counterexampleFor(proof, null)));
-                break;
             default:
                 throw new McpToolException(-32002, "Unknown proof resource suffix: " + suffix,
                     null);
         }
-        return result;
     }
 
-    private Map<String, Object> readOperationEvents(String uri) {
+    private Payload readOperationEvents(String uri) {
         String opId = uri.substring("operation://".length());
         if (opId.endsWith("/events")) {
             opId = opId.substring(0, opId.length() - "/events".length());
@@ -145,10 +158,7 @@ public class McpResourceHandler {
         if (op == null) {
             throw new McpToolException(-32003, "Operation not found: " + opId, null);
         }
-        Map<String, Object> result = Json.object();
-        result.put("uri", uri);
-        result.put("text", Json.stringify(op.getEvents()));
-        return result;
+        return new Payload("application/json", Json.stringify(op.getEvents()));
     }
 
     private String statusText(Proof proof) {

@@ -533,4 +533,58 @@ class KeyMcpServerTest {
         Map<String, Object> exportContent = (Map<String, Object>) exportContents.get(0);
         assertThat((String) exportContent.get("text")).contains("\\proof");
     }
+
+    /**
+     * Regression test: every content item of a {@code resources/read} result must satisfy
+     * the MCP schema, i.e. carry a string {@code uri} and exactly one of {@code text} or
+     * {@code blob}. Strict clients (e.g. Claude Code) reject the whole response otherwise.
+     */
+    @Test
+    void everyListedResourceReadsSchemaConformantContents() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+        loadExampleProject(server);
+        Map<String, Object> contractsResult = contractsResult(server);
+        List<?> contracts = (List<?>) contractsResult.get("contracts");
+        String contractId = findContractId(contracts, "sub");
+        assertThat(contractId).isNotNull();
+        callTool(server, 4, "key_proof_create", Map.of("contractId", contractId));
+
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"resources/list\",\"params\":{}}");
+        TestTransport transport = (TestTransport) server.transport;
+        Map<String, Object> listResponse = Json.parseObject(
+            transport.getSentMessages().get(transport.getSentMessages().size() - 1));
+        assertNoError(listResponse);
+        Map<String, Object> listResult = (Map<String, Object>) listResponse.get("result");
+        List<?> resources = (List<?>) listResult.get("resources");
+        assertThat(resources).isNotEmpty();
+
+        int id = 100;
+        for (Object r : resources) {
+            String uri = (String) ((Map<String, Object>) r).get("uri");
+            server.handleMessage("{\"jsonrpc\":\"2.0\",\"id\":" + (id++)
+                + ",\"method\":\"resources/read\",\"params\":{\"uri\":\"" + uri + "\"}}");
+            Map<String, Object> readResponse = Json.parseObject(
+                transport.getSentMessages().get(transport.getSentMessages().size() - 1));
+            assertNoError(readResponse);
+            Map<String, Object> readResult = (Map<String, Object>) readResponse.get("result");
+            List<?> contents = (List<?>) readResult.get("contents");
+            assertThat(contents).as("contents of %s", uri).isNotEmpty();
+            for (Object c : contents) {
+                Map<String, Object> content = (Map<String, Object>) c;
+                assertThat(content.get("uri")).as("uri of content for %s", uri)
+                        .isInstanceOf(String.class);
+                Object mimeType = content.get("mimeType");
+                if (mimeType != null) {
+                    assertThat(mimeType).as("mimeType of %s", uri).isInstanceOf(String.class);
+                }
+                boolean hasText = content.get("text") instanceof String;
+                boolean hasBlob = content.get("blob") instanceof String;
+                assertThat(hasText ^ hasBlob)
+                        .as("content of %s must have exactly one of text/blob", uri)
+                        .isTrue();
+            }
+        }
+    }
 }
