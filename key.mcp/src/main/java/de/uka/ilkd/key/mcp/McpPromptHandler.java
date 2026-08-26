@@ -60,7 +60,8 @@ public class McpPromptHandler {
         text.append("4. Poll the operation with key_operation_wait until it completes.\n");
         text.append(
             "5. If the proof is not closed, inspect goals with key_proof_goals_list and try "
-                + "key_proof_rule_apply or key_proof_script_run.\n");
+                + "key_proof_rule_apply (see key_proof_rules_list for rule names) or "
+                + "key_proof_script_run.\n");
         text.append("6. Export the result with key_proof_export.\n");
         return promptResult("Verify a KeY contract", text.toString());
     }
@@ -98,8 +99,9 @@ public class McpPromptHandler {
             "3. If a goal contains a program modality or updates, first run a proof script via "
                 + "key_proof_script_run (e.g. 'auto;' or 'unfold;').\n");
         text.append(
-            "4. Try targeted rules via key_proof_rule_apply; additional options such as on, "
-                + "formula, occ, matches, assumes, inst_* can be passed via 'parameters'.\n");
+            "4. Call key_proof_rules_list to discover rule names (use 'filter' to search "
+                + "taclets), then try targeted rules via key_proof_rule_apply; options such as "
+                + "on, formula, occ, matches, assumes, inst_* can be passed via 'parameters'.\n");
         text.append("5. Use key_proof_undo to revert unsuccessful rule applications.\n");
         return promptResult("Diagnose open goals", text.toString());
     }

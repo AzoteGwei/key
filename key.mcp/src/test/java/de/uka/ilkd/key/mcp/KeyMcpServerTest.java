@@ -384,6 +384,82 @@ class KeyMcpServerTest {
     }
 
     @Test
+    void rulesListDiscoversRuleNames() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+        loadExampleProject(server);
+        Map<String, Object> contractsResult = contractsResult(server);
+        List<?> contracts = (List<?>) contractsResult.get("contracts");
+        String contractId = findContractId(contracts, "sub");
+        assertThat(contractId).isNotNull();
+
+        Map<String, Object> createResult =
+            callTool(server, 4, "key_proof_create", Map.of("contractId", contractId));
+        String proofId = (String) createResult.get("proofId");
+
+        Map<String, Object> allResult =
+            callTool(server, 5, "key_proof_rules_list", Map.of("proofId", proofId));
+        List<?> builtIns = (List<?>) allResult.get("builtInRules");
+        assertThat(builtIns).isNotEmpty();
+        assertThat(((Number) allResult.get("tacletCount")).intValue()).isGreaterThan(100);
+        assertThat((String) allResult.get("tacletHint")).contains("filter");
+
+        Map<String, Object> filtered = callTool(server, 6, "key_proof_rules_list",
+            Map.of("proofId", proofId, "filter", "andLeft"));
+        List<?> taclets = (List<?>) filtered.get("taclets");
+        assertThat(taclets.contains("andLeft")).isTrue();
+    }
+
+    @Test
+    void ruleApplyQuotingAndErrorPaths() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+        loadExampleProject(server);
+        Map<String, Object> contractsResult = contractsResult(server);
+        List<?> contracts = (List<?>) contractsResult.get("contracts");
+        String contractId = findContractId(contracts, "sub");
+        assertThat(contractId).isNotNull();
+
+        Map<String, Object> createResult =
+            callTool(server, 4, "key_proof_create", Map.of("contractId", contractId));
+        String proofId = (String) createResult.get("proofId");
+
+        // A built-in rule name with spaces must be quoted in the generated script:
+        // the failure must be semantic ("No matching applications"), not a parse error.
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_rule_apply\",\"arguments\":{\"proofId\":\""
+                + proofId
+                + "\",\"goalId\":0,\"ruleName\":\"One Step Simplification\"}}}");
+        TestTransport transport = (TestTransport) server.transport;
+        Map<String, Object> response = Json.parseObject(
+            transport.getSentMessages().get(transport.getSentMessages().size() - 1));
+        Map<String, Object> error = (Map<String, Object>) response.get("error");
+        if (error != null) {
+            assertThat(error.get("code")).isEqualTo(-32603);
+            assertThat((String) error.get("message"))
+                    .doesNotContain("Unexpected positional argument");
+        } else {
+            // OSS was applicable in this environment: the rule was applied successfully.
+            Map<String, Object> result = (Map<String, Object>) response.get("result");
+            Map<String, Object> structured = (Map<String, Object>) result.get("structuredContent");
+            assertThat(structured.get("applied")).isEqualTo(true);
+            assertThat((String) structured.get("script"))
+                    .contains("rule \"One Step Simplification\"");
+        }
+
+        // Unknown rule names fail gracefully as well.
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"key_proof_rule_apply\",\"arguments\":{\"proofId\":\""
+                + proofId + "\",\"goalId\":0,\"ruleName\":\"no_such_rule_xyz\"}}}");
+        Map<String, Object> response2 = Json.parseObject(
+            transport.getSentMessages().get(transport.getSentMessages().size() - 1));
+        Map<String, Object> error2 = (Map<String, Object>) response2.get("error");
+        assertThat(error2).isNotNull();
+        assertThat(error2.get("code")).isEqualTo(-32603);
+        assertThat((String) error2.get("message")).contains("no_such_rule_xyz");
+    }
+
+    @Test
     void resourcesReadAfterProofCreate() {
         KeyMcpServer server = createServer();
         initialize(server);

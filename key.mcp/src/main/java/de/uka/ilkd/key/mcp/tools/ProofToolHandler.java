@@ -4,6 +4,7 @@
 package de.uka.ilkd.key.mcp.tools;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Timer;
@@ -14,6 +15,8 @@ import de.uka.ilkd.key.mcp.json.Json;
 import de.uka.ilkd.key.mcp.operation.Operation;
 import de.uka.ilkd.key.proof.Goal;
 import de.uka.ilkd.key.proof.Proof;
+import de.uka.ilkd.key.rule.BuiltInRule;
+import de.uka.ilkd.key.rule.Taclet;
 import de.uka.ilkd.key.scripts.ScriptException;
 import de.uka.ilkd.key.settings.ProofSettings;
 import de.uka.ilkd.key.strategy.StrategyProperties;
@@ -58,8 +61,9 @@ public class ProofToolHandler extends ToolHandler {
             List.of("proofId", "goalId"), this::handleProofGoalGet);
 
         register(tools, "key_proof_rule_apply",
-            "Apply a rule by name to the given goal. Additional KeY proof-script options "
-                + "(on, formula, occ, matches, assumes, inst_*) can be passed via 'parameters'.",
+            "Apply a rule by name to the given goal. Use key_proof_rules_list to discover valid "
+                + "rule names. Additional KeY proof-script options (on, formula, occ, matches, "
+                + "assumes, inst_*) can be passed via 'parameters'.",
             props(
                 "proofId", Map.of("type", "string"),
                 "goalId", Map.of("type", "integer"),
@@ -68,11 +72,23 @@ public class ProofToolHandler extends ToolHandler {
                     "Additional rule options, e.g. {\"on\": \"x + y\", \"occ\": 1}")),
             List.of("proofId", "goalId", "ruleName"), this::handleProofRuleApply);
 
-        register(tools, "key_proof_script_run", "Run a KeY proof script on the current proof.",
+        register(tools, "key_proof_script_run",
+            "Run a KeY proof script on the current proof. Useful commands: auto, select "
+                + "number=N, rule <name> [on=... formula=... occ=... inst_*=...], cut, "
+                + "instantiate, macro <name>, tryclose, smt. Commands end with ';'.",
             props(
                 "proofId", Map.of("type", "string"),
                 "script", Map.of("type", "string")),
             List.of("proofId", "script"), this::handleProofScriptRun);
+
+        register(tools, "key_proof_rules_list",
+            "List rule names usable with key_proof_rule_apply: all built-in rules plus active "
+                + "taclets. Pass 'filter' (case-insensitive substring) to search taclets; "
+                + "without a filter only the taclet count is returned.",
+            props(
+                "proofId", Map.of("type", "string"),
+                "filter", Map.of("type", "string")),
+            List.of("proofId"), this::handleProofRulesList);
 
         register(tools, "key_proof_undo", "Undo the last rule application on the given goal.",
             props(
@@ -182,7 +198,8 @@ public class ProofToolHandler extends ToolHandler {
 
         StringBuilder script = new StringBuilder();
         script.append("select number=").append(goalId).append(";\n");
-        script.append("rule ").append(ruleName);
+        // Rule names may contain spaces (e.g. "One Step Simplification"), so always quote.
+        script.append("rule ").append(ToolContext.scriptValue(ruleName));
         Object parameters = params.get("parameters");
         if (parameters instanceof Map<?, ?> options) {
             for (Map.Entry<?, ?> entry : options.entrySet()) {
@@ -229,6 +246,58 @@ public class ProofToolHandler extends ToolHandler {
         result.put("proofId", proofId);
         result.put("scriptExecuted", true);
         result.put("openGoals", proof.openGoals().size());
+        return result;
+    }
+
+    private Map<String, Object> handleProofRulesList(Map<String, Object> params) {
+        String proofId = ToolContext.requireString(params, "proofId");
+        String filter = (String) params.get("filter");
+        String filterLower = filter == null ? null : filter.toLowerCase(java.util.Locale.ROOT);
+        Proof proof = ctx.requireProof(proofId);
+
+        List<Map<String, Object>> builtIns = new ArrayList<>();
+        for (BuiltInRule rule : proof.getInitConfig().getProfile().getStandardRules()
+                .standardBuiltInRules()) {
+            String name = rule.name().toString();
+            if (filterLower != null && !name.toLowerCase(java.util.Locale.ROOT)
+                    .contains(filterLower)) {
+                continue;
+            }
+            Map<String, Object> item = Json.object();
+            item.put("name", name);
+            item.put("displayName", rule.displayName());
+            builtIns.add(item);
+        }
+        builtIns.sort(java.util.Comparator.comparing(m -> (String) m.get("name")));
+
+        Collection<Taclet> activeTaclets = proof.getInitConfig().activatedTaclets();
+
+        Map<String, Object> result = Json.object();
+        result.put("proofId", proofId);
+        result.put("builtInRules", builtIns);
+        result.put("tacletCount", activeTaclets.size());
+
+        if (filterLower == null) {
+            result.put("tacletHint",
+                "Pass 'filter' (case-insensitive substring) to list matching taclet names.");
+        } else {
+            List<String> matches = new ArrayList<>();
+            for (Taclet taclet : activeTaclets) {
+                String name = taclet.name().toString();
+                if (name.toLowerCase(java.util.Locale.ROOT).contains(filterLower)) {
+                    matches.add(name);
+                }
+            }
+            java.util.Collections.sort(matches);
+            boolean truncated = matches.size() > 200;
+            if (truncated) {
+                matches = matches.subList(0, 200);
+            }
+            result.put("taclets", matches);
+            if (truncated) {
+                result.put("tacletsTruncated", true);
+            }
+        }
         return result;
     }
 
