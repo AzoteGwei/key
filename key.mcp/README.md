@@ -41,6 +41,7 @@ The server reads its configuration from environment variables:
 | `KEY_MCP_DEFAULT_TIMEOUT_MS` | 60000 | Default timeout for proof operations. |
 | `KEY_MCP_DEFAULT_MAX_STEPS` | 10000 | Default maximum rule applications. |
 | `KEY_MCP_SMT_SOLVERS` | (empty) | Comma-separated list of allowed SMT solver names (e.g. `Z3_CE`). Empty means SMT is disabled. |
+| `KEY_MCP_ELICITATION_TIMEOUT_MS` | 60000 | Timeout in milliseconds for legacy elicitation path confirmations. |
 | `KEY_MCP_LOG_LEVEL` | INFO | Log level for server-side logging (always written to stderr). |
 
 The JVM heap size cannot be changed at runtime; set it at startup, e.g. `java -Xmx4g -jar ...`.
@@ -96,6 +97,17 @@ memory limits and client configuration see [docs/deployment.md](docs/deployment.
 - Single-client exclusive session: one KeY environment per process.
 - Tools are named with a `key_` prefix.
 - Tool results are returned both as MCP `content[]` (JSON text) and `structuredContent`.
+- All tools declare `outputSchema` and `annotations` (`readOnlyHint`, `destructiveHint`,
+  `idempotentHint`), matching their actual structured output.
+- Protocol-level cancellation is supported: clients can send `notifications/cancelled`
+  with a `requestId` to interrupt a blocking request such as `key_operation_wait` or
+  synchronous `key_proof_auto`. The server suppresses the response for the cancelled
+  request.
+- Legacy clients that declare the `elicitation` capability (directly or under
+  `experimental`) can be asked interactively to allow access to a path outside the
+  configured whitelist. The confirmation is remembered for the session if the user
+  chooses `allow_session`; `allow_once` does not cache. Modern clients always receive a
+  hard `-32602` reject for out-of-whitelist paths.
 
 ### Error codes
 
@@ -107,12 +119,20 @@ memory limits and client configuration see [docs/deployment.md](docs/deployment.
 | `-32602` | Invalid parameters: missing/blank required parameter, unknown tool, prompt or contract, unknown export format, bad goal id; in the modern era also resource/proof/operation not found. |
 | `-32603` | Internal error: project load failure, script failure, SMT failure, no open goals. |
 | `-32022` | Unsupported protocol version (modern era; `data.supported` lists the supported versions). |
-| `-32001` | Path rejected by the whitelist (`KEY_MCP_ALLOWED_PATHS`), legacy era only. |
+| `-32001` | Path rejected by the whitelist (`KEY_MCP_ALLOWED_PATHS`) and the user declined or timed out on elicitation, legacy era only. |
 | `-32002` | Proof, goal or resource not found, legacy era only. |
 | `-32003` | Operation not found, legacy era only. |
 
 Error codes from the legacy sub-range `-32000..-32019` are translated to `-32602` when
 serving modern (`2026-07-28`) requests, as required by that revision.
+
+### Path authorization
+
+By default every file path used by `key_project_load`, `key_proof_export` and any
+classpath/include argument must lie under one of the prefixes in
+`KEY_MCP_ALLOWED_PATHS`. Legacy clients that support elicitation can choose to allow a
+single access (`allow_once`) or the whole session (`allow_session`). Modern clients
+never see elicitations; out-of-whitelist paths always fail with `-32602`.
 
 ## Tools
 

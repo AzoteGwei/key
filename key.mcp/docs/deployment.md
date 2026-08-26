@@ -218,7 +218,7 @@ matter (set `KEY_MCP_WORKSPACE` explicitly).
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `-32001 Path not allowed` | Path resolves outside the whitelist (host vs. container path confusion in Docker) | Check `KEY_MCP_WORKSPACE` / `KEY_MCP_ALLOWED_PATHS`; remember agents pass container paths |
+| `-32001 Path not allowed` | Path resolves outside the whitelist (host vs. container path confusion in Docker), or a legacy elicitation was declined/cancelled/timed out | Check `KEY_MCP_WORKSPACE` / `KEY_MCP_ALLOWED_PATHS`; remember agents pass container paths; modern clients cannot use elicitations |
 | `-32603 Failed to load project` | KeY could not parse the project | Re-run with `KEY_MCP_LOG_LEVEL=DEBUG` and read stderr; the error `data` contains the cause chain |
 | Counterexample says "No SMT solver enabled" | `KEY_MCP_SMT_SOLVERS` empty | Set `KEY_MCP_SMT_SOLVERS=Z3_CE` and install Z3 |
 | Solver launch error | Z3 binary not on `PATH` of the server process | `which z3` in the same environment the client spawns |
