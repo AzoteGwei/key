@@ -460,6 +460,31 @@ class KeyMcpServerTest {
     }
 
     @Test
+    void projectLoadValidatesClassPathsAgainstWhitelist() {
+        KeyMcpServer server = createServer();
+        initialize(server);
+
+        // classPaths outside the whitelist are rejected like any other file parameter.
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"key_project_load\",\"arguments\":{\"location\":\"key.core.example/example\",\"classPaths\":[\"/etc\"]}}}");
+        TestTransport transport = (TestTransport) server.transport;
+        Map<String, Object> response = Json.parseObject(transport.getSentMessages().get(1));
+        Map<String, Object> error = (Map<String, Object>) response.get("error");
+        assertThat(error).isNotNull();
+        assertThat(error.get("code")).isEqualTo(-32001);
+
+        // Relative classPaths are resolved against the workspace and pass the whitelist
+        // (whether KeY accepts the entry itself is a separate, KeY-level concern).
+        server.handleMessage(
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"key_project_load\",\"arguments\":{\"location\":\"key.core.example/example\",\"classPaths\":[\"key.core.example\"]}}}");
+        Map<String, Object> response2 = Json.parseObject(transport.getSentMessages().get(2));
+        if (response2.containsKey("error")) {
+            Map<String, Object> error2 = (Map<String, Object>) response2.get("error");
+            assertThat(error2.get("code")).isNotEqualTo(-32001);
+        }
+    }
+
+    @Test
     void resourcesReadAfterProofCreate() {
         KeyMcpServer server = createServer();
         initialize(server);

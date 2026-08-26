@@ -45,6 +45,9 @@ The server reads its configuration from environment variables:
 
 The JVM heap size cannot be changed at runtime; set it at startup, e.g. `java -Xmx4g -jar ...`.
 
+> For a complete deployment walkthrough (mounting Java projects, extra classpaths,
+> Docker, Z3, troubleshooting) see [docs/deployment.md](docs/deployment.md).
+
 ## Example Claude Desktop configuration
 
 ```json
@@ -80,6 +83,9 @@ Run it (stdio) so that the client can spawn it as a subprocess:
 docker run -i --rm key-mcp
 ```
 
+**For volume mounts (exposing your Java project), extra classpaths, Z3 in Docker,
+memory limits and client configuration see [docs/deployment.md](docs/deployment.md).**
+
 ## Protocol
 
 - Transport: stdio JSON-RPC (MCP protocol version `2025-11-25`).
@@ -111,8 +117,9 @@ docker run -i --rm key-mcp
 ### Project
 
 - `key_project_load(location, classPaths?, bootClassPath?, includes?)` — load a project
-  directory or `.key` file. `location` is resolved against the workspace and must be inside
-  `KEY_MCP_ALLOWED_PATHS`. Returns `loadedTypes` and `contractCount`.
+  directory or `.key` file. All file parameters are resolved against the workspace and
+  must pass the whitelist; see [docs/deployment.md](docs/deployment.md) for details and
+  caveats on `classPaths`. Returns `loadedTypes` and `contractCount`.
 - `key_contracts_list()` — list all contracts: `contractId`, `targetName`, `displayName`,
   `type`. Contract IDs are deterministic (sorted by target name).
 

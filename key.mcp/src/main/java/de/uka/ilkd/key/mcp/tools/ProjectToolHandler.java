@@ -4,6 +4,7 @@
 package de.uka.ilkd.key.mcp.tools;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -42,9 +43,13 @@ public class ProjectToolHandler extends ToolHandler {
         Path projectPath = PathValidator.resolveAndValidate(location, ctx.config().workspace(),
             ctx.config().allowedPaths());
 
-        List<Path> classPaths = ToolContext.toPathList(params.get("classPaths"));
-        Path bootClassPath = ToolContext.toPath(params.get("bootClassPath"));
-        List<Path> includes = ToolContext.toPathList(params.get("includes"));
+        // All file parameters follow the same rules as 'location': relative paths are
+        // resolved against the workspace and every path must pass the whitelist.
+        List<Path> classPaths = resolvePathList(params.get("classPaths"));
+        Path bootClassPath = params.get("bootClassPath") == null ? null
+                : PathValidator.resolveAndValidate(params.get("bootClassPath").toString(),
+                    ctx.config().workspace(), ctx.config().allowedPaths());
+        List<Path> includes = resolvePathList(params.get("includes"));
 
         try {
             KeYEnvironment<?> env =
@@ -60,8 +65,31 @@ public class ProjectToolHandler extends ToolHandler {
             return result;
         } catch (ProblemLoaderException e) {
             throw new McpToolException(-32603, "Failed to load project: " + e.getMessage(),
-                e.getMessage());
+                causeChain(e));
         }
+    }
+
+    private static String causeChain(Throwable e) {
+        StringBuilder sb = new StringBuilder();
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (sb.length() > 0) {
+                sb.append(" <- ");
+            }
+            sb.append(t.getClass().getSimpleName()).append(": ").append(t.getMessage());
+        }
+        return sb.toString();
+    }
+
+    private List<Path> resolvePathList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return null;
+        }
+        List<Path> paths = new ArrayList<>();
+        for (Object o : list) {
+            paths.add(PathValidator.resolveAndValidate(o.toString(), ctx.config().workspace(),
+                ctx.config().allowedPaths()));
+        }
+        return paths;
     }
 
     private Map<String, Object> handleContractsList(Map<String, Object> params) {

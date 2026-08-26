@@ -4,7 +4,6 @@
 package de.uka.ilkd.key.mcp.tools;
 
 import java.io.ByteArrayOutputStream;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -329,24 +328,6 @@ public class ToolContext {
             return defaultValue;
         }
         return Boolean.parseBoolean(value.toString());
-    }
-
-    public static List<Path> toPathList(Object value) {
-        if (value instanceof List<?> list) {
-            List<Path> paths = new ArrayList<>();
-            for (Object o : list) {
-                paths.add(Path.of(o.toString()));
-            }
-            return paths;
-        }
-        return null;
-    }
-
-    public static Path toPath(Object value) {
-        if (value == null) {
-            return null;
-        }
-        return Path.of(value.toString());
     }
 
     public static String scriptValue(Object value) {
