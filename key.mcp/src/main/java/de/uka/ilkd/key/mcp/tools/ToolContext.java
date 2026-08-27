@@ -340,12 +340,19 @@ public class ToolContext {
         try {
             launcher.launch(problem, proof.getServices(), solverType);
         } catch (Exception e) {
-            java.io.StringWriter sw = new java.io.StringWriter();
-            e.printStackTrace(new java.io.PrintWriter(sw));
-            throw new McpToolException(-32603,
-                "Failed to run SMT solver '" + solverType.getName() + "': "
-                    + e.getClass().getSimpleName() + ": " + e.getMessage(),
-                sw.toString());
+            // Most launch failures are expected conditions rather than server faults:
+            // goals that still contain updates/modalities cannot be translated to
+            // SMT-LIB, and a configured solver binary may be missing. The tool
+            // contract ("if available") covers this via supported=false.
+            String detail = e.getClass().getSimpleName()
+                + (e.getMessage() != null ? ": " + e.getMessage() : "");
+            result.put("supported", false);
+            result.put("message",
+                "Goal cannot be falsified by solver '" + solverType.getName() + "': "
+                    + detail + ". Note that goals containing updates or modalities must "
+                    + "be advanced (e.g. via key_proof_auto or key_proof_script_run) "
+                    + "before SMT falsification is possible.");
+            return result;
         }
 
         SMTSolverResult solverResult = problem.getFinalResult();
