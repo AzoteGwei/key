@@ -88,7 +88,12 @@ public abstract class ToolHandler {
 
     @SafeVarargs
     protected static Map<String, Object> anyOfSchema(Map<String, Object>... alternatives) {
-        return Map.of("anyOf", List.of(alternatives));
+        // MCP requires outputSchema to be a JSON Schema object with type "object"
+        // at the top level; the alternatives describe the possible shapes of that object.
+        Map<String, Object> schema = Json.object();
+        schema.put("type", "object");
+        schema.put("anyOf", List.of(alternatives));
+        return schema;
     }
 
     // ----- Annotation helpers -------------------------------------------------

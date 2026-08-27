@@ -132,6 +132,9 @@ class ToolSchemaConsistencyTest {
                     .isNotNull();
             assertThat(tool.get("annotations")).as("annotations for %s", name)
                     .isNotNull();
+            Map<String, Object> outputSchema = (Map<String, Object>) tool.get("outputSchema");
+            assertThat(outputSchema.get("type")).as("outputSchema.type for %s", name)
+                    .isEqualTo("object");
             Map<String, Object> annotations = (Map<String, Object>) tool.get("annotations");
             if (expectedReadOnly.contains(name)) {
                 assertThat(annotations.get("readOnlyHint")).as("readOnlyHint for %s", name)
