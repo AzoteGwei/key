@@ -148,12 +148,19 @@ public final class ProofMethods {
             System.nanoTime() + (timeoutMs == null ? 0 : TimeUnit.MILLISECONDS.toNanos(timeoutMs));
         AutoModeOutcome outcome = AutoModeOutcome.COMPLETED;
         while (proofControl.isInAutoMode()) {
-            if (timeoutMs != null && outcome == AutoModeOutcome.COMPLETED
-                    && System.nanoTime() - deadline >= 0) {
+            long remaining = deadline - System.nanoTime();
+            if (timeoutMs != null && outcome == AutoModeOutcome.COMPLETED && remaining <= 0) {
                 proofControl.stopAutoMode();
                 outcome = AutoModeOutcome.TIMEOUT;
             }
-            Thread.sleep(POLL_MILLIS);
+            // Never sleep past the deadline: a budget of a few milliseconds has to mean a few
+            // milliseconds, not however long the next poll happens to be.
+            long sleep = POLL_MILLIS;
+            if (timeoutMs != null && remaining > 0) {
+                sleep =
+                    Math.max(1, Math.min(POLL_MILLIS, TimeUnit.NANOSECONDS.toMillis(remaining)));
+            }
+            Thread.sleep(sleep);
         }
         return outcome;
     }

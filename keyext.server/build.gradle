@@ -28,3 +28,24 @@ shadowJar {
     archiveClassifier = "exe"
     archiveBaseName = "keyext.server"
 }
+
+// The SMT degradation test sabotages SolverTypes, whose SolverType objects are process-wide
+// singletons: once a solver is pointed at a path that cannot be executed, it stays pointed there
+// for the rest of the JVM. Running it in its own forked task keeps that out of every other test.
+def smtDegradationTest = tasks.register("smtDegradationTest", Test) {
+    description = "Runs the SMT degradation test in a JVM of its own."
+    group = "verification"
+    filter {
+        includeTestsMatching "org.key_project.server.Smt*Test"
+    }
+    forkEvery = 1
+}
+
+tasks.named("test") {
+    filter {
+        excludeTestsMatching "org.key_project.server.Smt*Test"
+    }
+    // CI invokes ":keyext.server:test" directly, so the degradation test has to hang off that
+    // task to run at all.
+    dependsOn smtDegradationTest
+}
