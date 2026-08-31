@@ -1,0 +1,23 @@
+<configuration>
+    <!-- disables logback configuration messages on start up, see #1725 -->
+    <statusListener class="ch.qos.logback.core.status.NopStatusListener"/>
+
+    <!--
+        logback prefers logback-test.xml over logback.xml, so this shadows the server's
+        production configuration for tests only.
+
+        The appender MUST be called STDOUT and MUST be a ConsoleAppender: the shared JUnit
+        extension de.uka.ilkd.key.testfixtures.TestLogMgr looks it up by that name on the root
+        logger to buffer output of passing tests, and fails during engine initialisation if it
+        is missing.
+    -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%-10relative %-5level %-15thread %-25logger{5} %msg %ex%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>

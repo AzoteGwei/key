@@ -1,0 +1,30 @@
+plugins {
+    id 'application'
+    alias(libs.plugins.shadow)
+}
+
+description = "Headless JSON-RPC server that exposes KeY to automated agents."
+
+dependencies {
+    // Deliberately NOT key.ui: the server must stay free of Swing and of KeYMediator's
+    // single-"current proof" semantics, which conflict with serving many sessions.
+    implementation project(':key.core')
+
+    implementation(libs.jackson.databind)
+    implementation(libs.picocli)
+
+    // slf4j needs a binding at runtime, otherwise the shadow jar logs nothing at all.
+    // runtimeOnly keeps logback off the compile classpath so no code can depend on it.
+    runtimeOnly(libs.logback.classic)
+}
+
+application {
+    mainClass = "org.key_project.server.Main"
+    // for start script generated with createStartScripts
+    applicationName = "keyext-server"
+}
+
+shadowJar {
+    archiveClassifier = "exe"
+    archiveBaseName = "keyext.server"
+}
