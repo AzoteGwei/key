@@ -4,8 +4,11 @@
 package org.key_project.server;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import de.uka.ilkd.key.util.KeYConstants;
 
 import org.key_project.server.api.DiagnosticsMethods;
 import org.key_project.server.api.EnvironmentMethods;
@@ -16,6 +19,9 @@ import org.key_project.server.api.TaskMethods;
 import org.key_project.server.dto.TaskHandle;
 import org.key_project.server.exec.SerialExecutor;
 import org.key_project.server.exec.TaskRunner;
+import org.key_project.server.instance.IdleTimeout;
+import org.key_project.server.instance.InstanceRecord;
+import org.key_project.server.instance.InstanceRegistry;
 import org.key_project.server.registry.EnvironmentRegistry;
 import org.key_project.server.registry.Ids;
 import org.key_project.server.registry.ProofRegistry;
@@ -26,6 +32,7 @@ import org.key_project.server.transport.HttpTransport;
 import org.key_project.server.transport.SseHub;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,6 +58,8 @@ public final class KeyServerInstance implements AutoCloseable {
 
     private final SseHub events;
     private final HttpTransport transport;
+    private final InstanceRegistry registry;
+    private final @Nullable IdleTimeout idleTimeout;
     private final CountDownLatch stopped = new CountDownLatch(1);
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -88,6 +97,10 @@ public final class KeyServerInstance implements AutoCloseable {
         new DiagnosticsMethods(proofs, tasks).registerOn(dispatcher);
 
         this.transport = new HttpTransport(dispatcher, events, options.port(), this::onRequest);
+        this.registry = new InstanceRegistry(options.workspace());
+        this.idleTimeout = options.hasIdleTimeout()
+                ? new IdleTimeout(options.idleTimeoutSeconds(), tasks::hasActiveTask, this::close)
+                : null;
         LOGGER.info("Instance {} exposes {} methods.", instanceId,
             dispatcher.methodNames().size());
     }
@@ -110,9 +123,12 @@ public final class KeyServerInstance implements AutoCloseable {
         return transport.port();
     }
 
-    /** Starts serving requests. */
+    /** Starts serving requests and announces this instance to clients. */
     public void start() {
         transport.start();
+        registry.register(new InstanceRecord(instanceId, ProcessHandle.current().pid(),
+            "127.0.0.1", transport.port(), options.workspace().toString(), ApiVersion.CURRENT,
+            KeYConstants.VERSION, options.threads(), Instant.now().toString()));
     }
 
     /**
@@ -125,7 +141,9 @@ public final class KeyServerInstance implements AutoCloseable {
     }
 
     private void onRequest() {
-        // The idle timeout hangs off this in a later milestone.
+        if (idleTimeout != null) {
+            idleTimeout.touch();
+        }
     }
 
     @Override
@@ -134,6 +152,12 @@ public final class KeyServerInstance implements AutoCloseable {
             return;
         }
         LOGGER.info("Shutting down instance {}.", instanceId);
+        // Withdrawn first: a client that finds the record after this point would be told to
+        // connect to a port that is about to stop answering.
+        registry.unregister(instanceId);
+        if (idleTimeout != null) {
+            idleTimeout.close();
+        }
         transport.close();
         events.close();
         proofs.closeAll();

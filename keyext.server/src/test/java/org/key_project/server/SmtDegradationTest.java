@@ -99,9 +99,7 @@ class SmtDegradationTest {
     void aClientRunningTheSmtScriptCommandIsToldItDidNotWork() throws Exception {
         breakEverySolver();
 
-        try (KeyServerInstance instance =
-            new KeyServerInstance(new ServerOptions(0, Path.of(""), 0, 1))) {
-            instance.start();
+        try (KeyServerInstance instance = TestServer.start()) {
             JsonNode statistics =
                 new SmtRpcFixture(new RpcTestClient(instance.port())).proveWithSmt();
 

@@ -38,8 +38,7 @@ class AcceptanceTest {
 
     @BeforeEach
     void startServer() throws Exception {
-        instance = new KeyServerInstance(new ServerOptions(0, Path.of(""), 0, 1));
-        instance.start();
+        instance = TestServer.start();
         client = new RpcTestClient(instance.port());
     }
 

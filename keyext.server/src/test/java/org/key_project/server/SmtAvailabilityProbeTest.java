@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: GPL-2.0-only */
 package org.key_project.server;
 
-import java.nio.file.Path;
 import java.util.List;
 
 import de.uka.ilkd.key.proof.Proof;
@@ -62,9 +61,7 @@ class SmtAvailabilityProbeTest {
         assumeTrue(SmtFixture.solver().isInstalled(true),
             "no " + SmtFixture.SOLVER_NAME + " on this machine");
 
-        try (KeyServerInstance instance =
-            new KeyServerInstance(new ServerOptions(0, Path.of(""), 0, 1))) {
-            instance.start();
+        try (KeyServerInstance instance = TestServer.start()) {
             JsonNode statistics =
                 new SmtRpcFixture(new RpcTestClient(instance.port())).proveWithSmt();
 

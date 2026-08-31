@@ -49,3 +49,10 @@ tasks.named("test") {
     // task to run at all.
     dependsOn smtDegradationTest
 }
+
+// Instances publish a record under the user's XDG state directory. Left alone, running the tests
+// would scatter files through the developer's own ~/.local/state, so both test tasks are pointed
+// at the build directory instead.
+tasks.withType(Test).configureEach {
+    environment "XDG_STATE_HOME", layout.buildDirectory.dir("xdg-state").get().asFile.absolutePath
+}

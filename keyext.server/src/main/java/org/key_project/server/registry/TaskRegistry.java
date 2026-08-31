@@ -83,6 +83,20 @@ public final class TaskRegistry {
     }
 
     /**
+     * Whether any task is queued or running.
+     *
+     * @return {@code true} while work is in progress
+     */
+    public boolean hasActiveTask() {
+        for (TaskState existing : tasks.values()) {
+            if (existing.isActive()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Names the task currently working on a subject, if any.
      *
      * @param subject the environment or proof to ask about
