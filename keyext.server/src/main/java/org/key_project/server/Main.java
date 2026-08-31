@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-2.0-only */
 package org.key_project.server;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 
@@ -65,11 +66,22 @@ public final class Main implements Callable<Integer> {
     public Integer call() {
         ServerOptions options = toOptions();
         int workers = ProverMode.apply(options.threads());
-        LOGGER.info("Workspace {}, port {}, idle timeout {}s, {} prover worker(s).",
-            options.workspace(), options.port(), options.idleTimeoutSeconds(), workers);
-        // The transport, registries and RPC dispatcher are added in the next milestone.
-        LOGGER.error("The RPC server is not implemented yet.");
-        return 2;
+        LOGGER.info("Workspace {}, idle timeout {}s, {} prover worker(s).", options.workspace(),
+            options.idleTimeoutSeconds(), workers);
+
+        try (KeyServerInstance instance = new KeyServerInstance(options)) {
+            Runtime.getRuntime()
+                    .addShutdownHook(new Thread(instance::close, "key-server-shutdown"));
+            instance.start();
+            instance.awaitShutdown();
+            return 0;
+        } catch (IOException e) {
+            LOGGER.error("Could not bind port {}", options.port(), e);
+            return 2;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return 2;
+        }
     }
 
     /**
