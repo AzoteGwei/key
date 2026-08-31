@@ -13,6 +13,7 @@ import de.uka.ilkd.key.smt.SMTSolverResult.ThreeValuedTruth;
 import de.uka.ilkd.key.smt.solvertypes.SolverType;
 import de.uka.ilkd.key.smt.solvertypes.SolverTypes;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,8 +40,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SmtDegradationTest {
 
-    @Test
-    void aSolverThatCannotBeExecutedNeverYieldsAProof() throws Exception {
+    /**
+     * Points every solver KeY knows about at a path that cannot be executed.
+     *
+     * @return the solver the tests then ask
+     */
+    private static SolverType breakEverySolver() {
         Path missing = Path.of("/nonexistent").resolve("keyext-server-no-such-solver");
         assertThat(Files.exists(missing)).isFalse();
 
@@ -49,7 +54,12 @@ class SmtDegradationTest {
         for (SolverType solver : solvers) {
             solver.setSolverCommand(missing.toString());
         }
-        SolverType z3 = SmtFixture.solver();
+        return SmtFixture.solver();
+    }
+
+    @Test
+    void aSolverThatCannotBeExecutedNeverYieldsAProof() throws Exception {
+        SolverType z3 = breakEverySolver();
         // KeY's own availability check has to agree that the environment is degraded, otherwise
         // the rest of this test would be proving nothing.
         assertThat(z3.isInstalled(true)).isFalse();
@@ -69,5 +79,36 @@ class SmtDegradationTest {
         assertThat(proof.closed()).isFalse();
         assertThat(ProofFacts.describe(proof).closed()).isFalse();
         assertThat(ProofFacts.describe(proof).openGoals()).isPositive();
+    }
+
+    /**
+     * The same degradation, seen from where a client stands.
+     *
+     * <p>
+     * The test above establishes that KeY's launcher does not invent a result. This one asks the
+     * question the protocol actually exposes: a client runs the script that proves this fixture
+     * when a solver is present, and has to be told plainly that it did not work. Nothing in the
+     * server's own code is mocked or short-circuited — the request goes over HTTP and the
+     * {@code smt} command really tries to start a process.
+     *
+     * <p>
+     * {@link SmtAvailabilityProbeTest} runs this same script with the solver left alone and
+     * requires the proof to close, so the difference asserted here is genuinely the solver.
+     */
+    @Test
+    void aClientRunningTheSmtScriptCommandIsToldItDidNotWork() throws Exception {
+        breakEverySolver();
+
+        try (KeyServerInstance instance =
+            new KeyServerInstance(new ServerOptions(0, Path.of(""), 0, 1))) {
+            instance.start();
+            JsonNode statistics =
+                new SmtRpcFixture(new RpcTestClient(instance.port())).proveWithSmt();
+
+            assertThat(statistics.get("closed").asBoolean()).isFalse();
+            assertThat(statistics.get("openGoals").asInt()).isPositive();
+            // No solver ran, so nothing may be counted as having been closed by one.
+            assertThat(statistics.get("smtSolverApps").asInt()).isZero();
+        }
     }
 }

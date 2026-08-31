@@ -3,12 +3,14 @@
  * SPDX-License-Identifier: GPL-2.0-only */
 package org.key_project.server;
 
+import java.nio.file.Path;
 import java.util.List;
 
 import de.uka.ilkd.key.proof.Proof;
 import de.uka.ilkd.key.smt.SMTSolverResult.ThreeValuedTruth;
 import de.uka.ilkd.key.smt.solvertypes.SolverType;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,5 +46,31 @@ class SmtAvailabilityProbeTest {
 
         assertThat(SmtFixture.ask(proof, List.of(z3)).isValid())
                 .isEqualTo(ThreeValuedTruth.VALID);
+    }
+
+    /**
+     * The control for the degraded case seen through the protocol.
+     *
+     * <p>
+     * With the solver left alone, the script that
+     * {@code SmtDegradationTest#aClientRunningTheSmtScriptCommandIsToldItDidNotWork} runs has to
+     * close the proof, and {@code smtSolverApps} has to show that a solver is what closed it.
+     * Without this, that test would keep passing if the fixture stopped reaching a solver at all.
+     */
+    @Test
+    void theSmtScriptCommandClosesTheProofWhenTheSolverWorks() throws Exception {
+        assumeTrue(SmtFixture.solver().isInstalled(true),
+            "no " + SmtFixture.SOLVER_NAME + " on this machine");
+
+        try (KeyServerInstance instance =
+            new KeyServerInstance(new ServerOptions(0, Path.of(""), 0, 1))) {
+            instance.start();
+            JsonNode statistics =
+                new SmtRpcFixture(new RpcTestClient(instance.port())).proveWithSmt();
+
+            assertThat(statistics.get("closed").asBoolean()).isTrue();
+            assertThat(statistics.get("openGoals").asInt()).isZero();
+            assertThat(statistics.get("smtSolverApps").asInt()).isPositive();
+        }
     }
 }

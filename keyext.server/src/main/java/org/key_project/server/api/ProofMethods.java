@@ -3,11 +3,9 @@
  * SPDX-License-Identifier: GPL-2.0-only */
 package org.key_project.server.api;
 
-import java.util.concurrent.TimeUnit;
-
-import de.uka.ilkd.key.control.ProofControl;
 import de.uka.ilkd.key.proof.Proof;
 import de.uka.ilkd.key.speclang.Contract;
+import de.uka.ilkd.key.util.ProofStarter;
 
 import org.key_project.server.ProofFacts;
 import org.key_project.server.ServerUserInterfaceControl;
@@ -16,6 +14,7 @@ import org.key_project.server.dto.AutoModeResult;
 import org.key_project.server.dto.Ok;
 import org.key_project.server.dto.ProofRef;
 import org.key_project.server.dto.TaskKind;
+import org.key_project.server.exec.InterruptibleRun;
 import org.key_project.server.exec.TaskRunner;
 import org.key_project.server.registry.EnvironmentRegistry;
 import org.key_project.server.registry.LoadedEnvironment;
@@ -27,19 +26,8 @@ import org.key_project.server.rpc.RpcErrorCode;
 import org.key_project.server.rpc.RpcException;
 import org.key_project.server.rpc.RpcMethod;
 
-import org.jspecify.annotations.Nullable;
-
 /** The {@code proof.*} methods: starting proofs, running the search and reading the result. */
 public final class ProofMethods {
-
-    /**
-     * How often the worker thread looks at KeY's auto mode while waiting for it.
-     *
-     * <p>
-     * Short enough that a cancellation or a timeout takes effect promptly, long enough that
-     * waiting costs nothing measurable next to proof search.
-     */
-    private static final long POLL_MILLIS = 20;
 
     private final ServerUserInterfaceControl control;
     private final EnvironmentRegistry environments;
@@ -118,51 +106,19 @@ public final class ProofMethods {
         }
         ProofRef ref = new ProofRef(registered.proofId());
         return tasks.launchExclusive(TaskKind.AUTO, ref, task -> {
-            ProofControl proofControl = control.getProofControl();
-            task.onCancel(proofControl::stopAutoMode);
-            proofControl.startAutoMode(proof);
-            AutoModeOutcome outcome = awaitAutoMode(proofControl, timeoutMs);
+            // ProofStarter is what KeY's own proof control runs behind its auto-mode thread; the
+            // difference is that this runs it here, where a failure is still ours to report.
+            ProofStarter starter = new ProofStarter(control, false);
+            starter.init(proof);
+            InterruptibleRun.Result<?> run =
+                InterruptibleRun.run(task, timeoutMs, starter::start);
+
+            AutoModeOutcome outcome =
+                run.timedOut() ? AutoModeOutcome.TIMEOUT : AutoModeOutcome.COMPLETED;
             // Read afterwards, from the proof itself: whether anything was achieved is KeY's
             // answer, not a conclusion drawn from the search having returned.
             return new AutoModeResult(ref, outcome, ProofFacts.describe(proof));
         });
-    }
-
-    /**
-     * Waits for KeY's automatic search to end, interrupting it when its budget runs out.
-     *
-     * <p>
-     * The budget is enforced by stopping the search, which is the same mechanism a client
-     * cancellation uses: KeY checks for it between rule applications. It is deliberately not
-     * implemented by writing to the strategy settings, because every {@code ProofSettings} object
-     * persists property changes to the user's own configuration file.
-     *
-     * @param proofControl KeY's proof control, already running a search
-     * @param timeoutMs the budget in milliseconds, or {@code null} for none
-     * @return whether the search finished on its own or was cut short
-     * @throws InterruptedException when the worker thread itself is interrupted
-     */
-    private AutoModeOutcome awaitAutoMode(ProofControl proofControl, @Nullable Long timeoutMs)
-            throws InterruptedException {
-        long deadline =
-            System.nanoTime() + (timeoutMs == null ? 0 : TimeUnit.MILLISECONDS.toNanos(timeoutMs));
-        AutoModeOutcome outcome = AutoModeOutcome.COMPLETED;
-        while (proofControl.isInAutoMode()) {
-            long remaining = deadline - System.nanoTime();
-            if (timeoutMs != null && outcome == AutoModeOutcome.COMPLETED && remaining <= 0) {
-                proofControl.stopAutoMode();
-                outcome = AutoModeOutcome.TIMEOUT;
-            }
-            // Never sleep past the deadline: a budget of a few milliseconds has to mean a few
-            // milliseconds, not however long the next poll happens to be.
-            long sleep = POLL_MILLIS;
-            if (timeoutMs != null && remaining > 0) {
-                sleep =
-                    Math.max(1, Math.min(POLL_MILLIS, TimeUnit.NANOSECONDS.toMillis(remaining)));
-            }
-            Thread.sleep(sleep);
-        }
-        return outcome;
     }
 
     private Object statistics(ProofRequest request) {

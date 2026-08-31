@@ -14,6 +14,8 @@ import org.key_project.server.dto.SourcePosition;
 import org.key_project.util.parsing.Location;
 import org.key_project.util.parsing.Position;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Turns KeY failures into the structured detail clients receive.
  *
@@ -40,6 +42,29 @@ public final class KeyErrors {
             positions.add(toSourcePosition(message));
         }
         return new RpcErrorData(List.copyOf(positions), rootMessage(failure));
+    }
+
+    /**
+     * Describes a single source location KeY attached to a failure.
+     *
+     * <p>
+     * Proof script failures carry a {@link Location} rather than a {@code PositionedString}: KeY
+     * knows exactly which command in the script gave up, and that position is far more use to an
+     * agent rewriting the script than the message text is.
+     *
+     * @param location where the failure happened, may be {@code null}
+     * @param detail the explanation to accompany it
+     * @return structured detail carrying the position, if there was one
+     */
+    public static RpcErrorData at(@Nullable Location location, String detail) {
+        if (location == null) {
+            return RpcErrorData.of(detail);
+        }
+        Position position = location.getPosition();
+        String file = location.getFileUri() == null ? null : location.getFileUri().toString();
+        int line = position.isNegative() ? 0 : position.line();
+        int column = position.isNegative() ? 0 : position.column();
+        return new RpcErrorData(List.of(new SourcePosition(file, line, column, detail)), detail);
     }
 
     private static SourcePosition toSourcePosition(PositionedString message) {

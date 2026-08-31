@@ -81,6 +81,11 @@ public final class TaskState {
         }
     }
 
+    /** Forgets the interrupt hook, once the work it belonged to has finished. */
+    public synchronized void clearCancelHook() {
+        canceller = null;
+    }
+
     /**
      * Asks the task to stop.
      *
