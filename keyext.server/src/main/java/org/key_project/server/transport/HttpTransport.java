@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
  * The single JSON-RPC endpoint, served by the JDK's own HTTP server.
  *
  * <p>
- * The protocol needs one {@code POST /rpc} for calls and later one {@code GET /rpc} for the event
+ * The protocol needs one {@code POST /rpc} for calls and one {@code GET /rpc} for the event
  * stream, which is well within what {@code com.sun.net.httpserver} does. Pulling in a web framework
  * for two routes would add a dependency tree out of proportion to the job.
  *
@@ -38,6 +38,7 @@ public final class HttpTransport implements AutoCloseable {
     private static final int MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 
     private final JsonRpcDispatcher dispatcher;
+    private final SseHub events;
     private final HttpServer server;
     private final ExecutorService connections;
     private final Runnable requestObserver;
@@ -46,13 +47,15 @@ public final class HttpTransport implements AutoCloseable {
      * Binds the endpoint.
      *
      * @param dispatcher the dispatcher requests are routed to
+     * @param events the hub that serves the event stream
      * @param port the port to bind, {@code 0} to let the OS choose
      * @param requestObserver notified on every request, used to reset the idle timer
      * @throws IOException when the port cannot be bound
      */
-    public HttpTransport(JsonRpcDispatcher dispatcher, int port, Runnable requestObserver)
-            throws IOException {
+    public HttpTransport(JsonRpcDispatcher dispatcher, SseHub events, int port,
+            Runnable requestObserver) throws IOException {
         this.dispatcher = dispatcher;
+        this.events = events;
         this.requestObserver = requestObserver;
         this.connections = Executors.newCachedThreadPool(runnable -> {
             Thread thread = new Thread(runnable, "key-http");
@@ -81,12 +84,19 @@ public final class HttpTransport implements AutoCloseable {
     }
 
     private void handle(HttpExchange exchange) throws IOException {
+        if ("GET".equals(exchange.getRequestMethod())) {
+            // The event stream. It takes ownership of the exchange and holds it open, so this
+            // must not fall through to the close in the finally below.
+            requestObserver.run();
+            events.subscribe(exchange);
+            return;
+        }
         try {
             requestObserver.run();
             if (!"POST".equals(exchange.getRequestMethod())) {
-                // GET is reserved for the event stream, which arrives in a later milestone.
                 respond(exchange, 405, "text/plain; charset=utf-8",
-                    "Only POST is supported on " + ENDPOINT + " so far");
+                    "Only POST for calls and GET for the event stream are supported on "
+                        + ENDPOINT);
                 return;
             }
             byte[] body = exchange.getRequestBody().readNBytes(MAX_REQUEST_BYTES);

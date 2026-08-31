@@ -19,6 +19,16 @@ import org.jspecify.annotations.Nullable;
 public final class TaskRegistry {
 
     private final Map<String, TaskState> tasks = new ConcurrentHashMap<>();
+    private volatile TaskState.Events events = TaskState.IGNORED;
+
+    /**
+     * Directs the events of every task created from now on at the given sink.
+     *
+     * @param sink where task events go, typically the event stream hub
+     */
+    public void publishTo(TaskState.Events sink) {
+        this.events = sink;
+    }
 
     /**
      * Registers a new task in state {@code PENDING}.
@@ -29,7 +39,7 @@ public final class TaskRegistry {
      */
     public synchronized TaskState create(TaskKind kind, @Nullable Object subject) {
         String id = Ids.create("task");
-        TaskState state = new TaskState(id, kind, subject);
+        TaskState state = new TaskState(id, kind, subject, events);
         tasks.put(id, state);
         return state;
     }

@@ -76,12 +76,27 @@ public final class KeyErrors {
         return new SourcePosition(file, line, column, message.getText());
     }
 
+    /**
+     * Finds the most specific explanation in a chain of causes.
+     *
+     * <p>
+     * The innermost cause is usually the most precise, but parser exceptions often carry no
+     * message at all, and answering with a bare class name tells a caller nothing. So the walk
+     * keeps the deepest message it actually finds and falls back to a name only when the whole
+     * chain is silent.
+     *
+     * @param failure the exception to describe
+     * @return the explanation to report
+     */
     private static String rootMessage(Throwable failure) {
+        String deepest = null;
         Throwable current = failure;
-        while (current.getCause() != null && current.getCause() != current) {
-            current = current.getCause();
+        while (current != null) {
+            if (current.getMessage() != null) {
+                deepest = current.getMessage();
+            }
+            current = current.getCause() == current ? null : current.getCause();
         }
-        String message = current.getMessage();
-        return message == null ? current.getClass().getName() : message;
+        return deepest == null ? failure.getClass().getName() : deepest;
     }
 }

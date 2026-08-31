@@ -20,9 +20,46 @@ import org.jspecify.annotations.Nullable;
  */
 public final class TaskState {
 
+    /**
+     * Where this task announces what it is doing.
+     *
+     * <p>
+     * Notifications are built while holding this object's lock but sent after releasing it, so a
+     * slow or blocking listener can never stall the worker thread that is doing the proving.
+     */
+    public interface Events {
+        /**
+         * The task started or moved on.
+         *
+         * @param handle the task as it now stands
+         */
+        void progressed(TaskHandle handle);
+
+        /**
+         * The task reached a terminal state.
+         *
+         * @param handle the finished task, carrying its result or its error
+         */
+        void finished(TaskHandle handle);
+    }
+
+    /** Used when nothing is listening. */
+    public static final Events IGNORED = new Events() {
+        @Override
+        public void progressed(TaskHandle handle) {
+            // nobody is listening
+        }
+
+        @Override
+        public void finished(TaskHandle handle) {
+            // nobody is listening
+        }
+    };
+
     private final String taskId;
     private final TaskKind kind;
     private final @Nullable Object subject;
+    private final Events events;
 
     private TaskStatus status = TaskStatus.PENDING;
     private @Nullable Object result;
@@ -31,10 +68,11 @@ public final class TaskState {
     private boolean cancelRequested;
     private @Nullable Runnable canceller;
 
-    TaskState(String taskId, TaskKind kind, @Nullable Object subject) {
+    TaskState(String taskId, TaskKind kind, @Nullable Object subject, Events events) {
         this.taskId = taskId;
         this.kind = kind;
         this.subject = subject;
+        this.events = events;
     }
 
     /**
@@ -56,8 +94,13 @@ public final class TaskState {
     }
 
     /** Marks the task as executing. */
-    public synchronized void running() {
-        status = TaskStatus.RUNNING;
+    public void running() {
+        TaskHandle handle;
+        synchronized (this) {
+            status = TaskStatus.RUNNING;
+            handle = snapshot();
+        }
+        events.progressed(handle);
     }
 
     /**
@@ -130,10 +173,15 @@ public final class TaskState {
      *
      * @param taskResult the product of the work, may be {@code null}
      */
-    public synchronized void succeeded(@Nullable Object taskResult) {
-        this.result = taskResult;
-        this.progress = null;
-        status = TaskStatus.SUCCEEDED;
+    public void succeeded(@Nullable Object taskResult) {
+        TaskHandle handle;
+        synchronized (this) {
+            this.result = taskResult;
+            this.progress = null;
+            status = TaskStatus.SUCCEEDED;
+            handle = snapshot();
+        }
+        events.finished(handle);
     }
 
     /**
@@ -141,16 +189,26 @@ public final class TaskState {
      *
      * @param failure structured description of the failure
      */
-    public synchronized void failed(RpcErrorData failure) {
-        this.error = failure;
-        this.progress = null;
-        status = TaskStatus.FAILED;
+    public void failed(RpcErrorData failure) {
+        TaskHandle handle;
+        synchronized (this) {
+            this.error = failure;
+            this.progress = null;
+            status = TaskStatus.FAILED;
+            handle = snapshot();
+        }
+        events.finished(handle);
     }
 
     /** Records that the work was cancelled on request. */
-    public synchronized void cancelled() {
-        this.progress = null;
-        status = TaskStatus.CANCELLED;
+    public void cancelled() {
+        TaskHandle handle;
+        synchronized (this) {
+            this.progress = null;
+            status = TaskStatus.CANCELLED;
+            handle = snapshot();
+        }
+        events.finished(handle);
     }
 
     /**
@@ -158,8 +216,13 @@ public final class TaskState {
      *
      * @param detail free-form progress information
      */
-    public synchronized void progress(@Nullable Object detail) {
-        this.progress = detail;
+    public void progress(@Nullable Object detail) {
+        TaskHandle handle;
+        synchronized (this) {
+            this.progress = detail;
+            handle = snapshot();
+        }
+        events.progressed(handle);
     }
 
     /**
@@ -177,6 +240,10 @@ public final class TaskState {
      * @return the wire representation of this task
      */
     public synchronized TaskHandle toHandle() {
+        return snapshot();
+    }
+
+    private TaskHandle snapshot() {
         return new TaskHandle(taskId, kind, status, subject, result, progress, error);
     }
 }

@@ -13,14 +13,17 @@ import org.key_project.server.api.GoalMethods;
 import org.key_project.server.api.ProofMethods;
 import org.key_project.server.api.ServerMethods;
 import org.key_project.server.api.TaskMethods;
+import org.key_project.server.dto.TaskHandle;
 import org.key_project.server.exec.SerialExecutor;
 import org.key_project.server.exec.TaskRunner;
 import org.key_project.server.registry.EnvironmentRegistry;
 import org.key_project.server.registry.Ids;
 import org.key_project.server.registry.ProofRegistry;
 import org.key_project.server.registry.TaskRegistry;
+import org.key_project.server.registry.TaskState;
 import org.key_project.server.rpc.JsonRpcDispatcher;
 import org.key_project.server.transport.HttpTransport;
+import org.key_project.server.transport.SseHub;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -46,6 +49,7 @@ public final class KeyServerInstance implements AutoCloseable {
     private final ProofRegistry proofs = new ProofRegistry();
     private final TaskRegistry tasks = new TaskRegistry();
 
+    private final SseHub events;
     private final HttpTransport transport;
     private final CountDownLatch stopped = new CountDownLatch(1);
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -60,6 +64,18 @@ public final class KeyServerInstance implements AutoCloseable {
         this.options = options;
 
         ObjectMapper mapper = new ObjectMapper();
+        this.events = new SseHub(mapper);
+        tasks.publishTo(new TaskState.Events() {
+            @Override
+            public void progressed(TaskHandle handle) {
+                events.progressed(handle);
+            }
+
+            @Override
+            public void finished(TaskHandle handle) {
+                events.finished(handle);
+            }
+        });
         JsonRpcDispatcher dispatcher = new JsonRpcDispatcher(mapper, executor);
         TaskRunner runner = new TaskRunner(executor, tasks, control);
 
@@ -71,7 +87,7 @@ public final class KeyServerInstance implements AutoCloseable {
         new GoalMethods(control, proofs, runner).registerOn(dispatcher);
         new DiagnosticsMethods(proofs, tasks).registerOn(dispatcher);
 
-        this.transport = new HttpTransport(dispatcher, options.port(), this::onRequest);
+        this.transport = new HttpTransport(dispatcher, events, options.port(), this::onRequest);
         LOGGER.info("Instance {} exposes {} methods.", instanceId,
             dispatcher.methodNames().size());
     }
@@ -119,6 +135,7 @@ public final class KeyServerInstance implements AutoCloseable {
         }
         LOGGER.info("Shutting down instance {}.", instanceId);
         transport.close();
+        events.close();
         proofs.closeAll();
         environments.closeAll();
         executor.close();
