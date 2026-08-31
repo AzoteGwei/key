@@ -48,7 +48,7 @@ public class DefaultProofControl extends AbstractProofControl {
      *        to all started {@link ApplyStrategy} instances.
      */
     public DefaultProofControl(UserInterfaceControl ui,
-            DefaultUserInterfaceControl defaultProverTaskListener) {
+            ProverTaskListener defaultProverTaskListener) {
         super(defaultProverTaskListener);
         this.ui = ui;
     }
@@ -62,7 +62,7 @@ public class DefaultProofControl extends AbstractProofControl {
      * @param ruleCompletionHandler An optional {@link RuleCompletionHandler}.
      */
     public DefaultProofControl(UserInterfaceControl ui,
-            DefaultUserInterfaceControl defaultProverTaskListener,
+            ProverTaskListener defaultProverTaskListener,
             RuleCompletionHandler ruleCompletionHandler) {
         super(defaultProverTaskListener, ruleCompletionHandler);
         this.ui = ui;
