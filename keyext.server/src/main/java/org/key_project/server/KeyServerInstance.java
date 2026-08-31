@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.key_project.server.api.DiagnosticsMethods;
 import org.key_project.server.api.EnvironmentMethods;
 import org.key_project.server.api.GoalMethods;
 import org.key_project.server.api.ProofMethods;
@@ -68,6 +69,7 @@ public final class KeyServerInstance implements AutoCloseable {
                 .registerOn(dispatcher);
         new ProofMethods(control, environments, proofs, runner).registerOn(dispatcher);
         new GoalMethods(control, proofs, runner).registerOn(dispatcher);
+        new DiagnosticsMethods(proofs, tasks).registerOn(dispatcher);
 
         this.transport = new HttpTransport(dispatcher, options.port(), this::onRequest);
         LOGGER.info("Instance {} exposes {} methods.", instanceId,

@@ -73,6 +73,21 @@ public final class TaskRegistry {
     }
 
     /**
+     * Names the task currently working on a subject, if any.
+     *
+     * @param subject the environment or proof to ask about
+     * @return the identifier of the active task, or {@code null} when nothing is working on it
+     */
+    public synchronized @Nullable String activeTaskFor(Object subject) {
+        for (TaskState existing : tasks.values()) {
+            if (subject.equals(existing.subject()) && existing.isActive()) {
+                return existing.taskId();
+            }
+        }
+        return null;
+    }
+
+    /**
      * Snapshots every known task.
      *
      * @return the wire representation of all tasks
