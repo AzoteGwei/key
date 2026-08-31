@@ -27,11 +27,34 @@ public final class TaskRegistry {
      * @param subject what it operates on, may be {@code null} before the subject exists
      * @return the new task state
      */
-    public TaskState create(TaskKind kind, @Nullable Object subject) {
+    public synchronized TaskState create(TaskKind kind, @Nullable Object subject) {
         String id = Ids.create("task");
         TaskState state = new TaskState(id, kind, subject);
         tasks.put(id, state);
         return state;
+    }
+
+    /**
+     * Registers a new task, provided nothing else is already working on the same subject.
+     *
+     * <p>
+     * Two proof searches on one proof would corrupt it, so the check and the registration happen
+     * together rather than leaving a window in which two requests both pass the check.
+     *
+     * @param kind what the task will do
+     * @param subject what it operates on
+     * @return the new task state
+     * @throws RpcException with {@link RpcErrorCode#TASK_CONFLICT} when a task is already active
+     *         on that subject
+     */
+    public synchronized TaskState createExclusive(TaskKind kind, Object subject) {
+        for (TaskState existing : tasks.values()) {
+            if (subject.equals(existing.subject()) && existing.isActive()) {
+                throw new RpcException(RpcErrorCode.TASK_CONFLICT,
+                    "Another task is already running on this subject: " + existing.taskId());
+            }
+        }
+        return create(kind, subject);
     }
 
     /**

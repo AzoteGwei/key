@@ -8,12 +8,14 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.key_project.server.api.EnvironmentMethods;
+import org.key_project.server.api.ProofMethods;
 import org.key_project.server.api.ServerMethods;
 import org.key_project.server.api.TaskMethods;
 import org.key_project.server.exec.SerialExecutor;
 import org.key_project.server.exec.TaskRunner;
 import org.key_project.server.registry.EnvironmentRegistry;
 import org.key_project.server.registry.Ids;
+import org.key_project.server.registry.ProofRegistry;
 import org.key_project.server.registry.TaskRegistry;
 import org.key_project.server.rpc.JsonRpcDispatcher;
 import org.key_project.server.transport.HttpTransport;
@@ -39,6 +41,7 @@ public final class KeyServerInstance implements AutoCloseable {
     private final SerialExecutor executor = new SerialExecutor();
     private final ServerUserInterfaceControl control = new ServerUserInterfaceControl();
     private final EnvironmentRegistry environments = new EnvironmentRegistry();
+    private final ProofRegistry proofs = new ProofRegistry();
     private final TaskRegistry tasks = new TaskRegistry();
 
     private final HttpTransport transport;
@@ -60,11 +63,9 @@ public final class KeyServerInstance implements AutoCloseable {
 
         new ServerMethods(instanceId, options).registerOn(dispatcher);
         new TaskMethods(tasks).registerOn(dispatcher);
-        // Until proofs get their own registry, the only proof an environment can hold is the one a
-        // loaded .proof file brought with it.
-        new EnvironmentMethods(options, control, environments, runner,
-            envId -> environments.require(envId).loadedProof() == null ? 0 : 1)
+        new EnvironmentMethods(options, control, environments, runner, proofs)
                 .registerOn(dispatcher);
+        new ProofMethods(control, environments, proofs, runner).registerOn(dispatcher);
 
         this.transport = new HttpTransport(dispatcher, options.port(), this::onRequest);
         LOGGER.info("Instance {} exposes {} methods.", instanceId,
@@ -114,6 +115,7 @@ public final class KeyServerInstance implements AutoCloseable {
         }
         LOGGER.info("Shutting down instance {}.", instanceId);
         transport.close();
+        proofs.closeAll();
         environments.closeAll();
         executor.close();
         stopped.countDown();

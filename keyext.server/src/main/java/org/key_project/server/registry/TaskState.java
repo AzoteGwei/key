@@ -28,6 +28,8 @@ public final class TaskState {
     private @Nullable Object result;
     private @Nullable Object progress;
     private @Nullable RpcErrorData error;
+    private boolean cancelRequested;
+    private @Nullable Runnable canceller;
 
     TaskState(String taskId, TaskKind kind, @Nullable Object subject) {
         this.taskId = taskId;
@@ -44,9 +46,75 @@ public final class TaskState {
         return taskId;
     }
 
+    /**
+     * What this task operates on.
+     *
+     * @return the subject reference, or {@code null} when the task has none
+     */
+    public @Nullable Object subject() {
+        return subject;
+    }
+
     /** Marks the task as executing. */
     public synchronized void running() {
         status = TaskStatus.RUNNING;
+    }
+
+    /**
+     * Registers how to interrupt this task's work while it runs.
+     *
+     * <p>
+     * Called by the work itself once it knows what it is driving, for instance KeY's auto mode.
+     * If cancellation was already requested before that point, the hook fires immediately so a
+     * cancel that raced ahead of the worker thread is not lost.
+     *
+     * @param interrupt what to run when the client asks to cancel
+     */
+    public void onCancel(Runnable interrupt) {
+        boolean cancelAlreadyAsked;
+        synchronized (this) {
+            canceller = interrupt;
+            cancelAlreadyAsked = cancelRequested;
+        }
+        if (cancelAlreadyAsked) {
+            interrupt.run();
+        }
+    }
+
+    /**
+     * Asks the task to stop.
+     *
+     * <p>
+     * This only requests: KeY stops the automatic search between rule applications, so the work
+     * ends when it next gets the chance. The task reaches {@link TaskStatus#CANCELLED} only once
+     * it actually has.
+     *
+     * @return {@code true} if the task was still active and the request was recorded
+     */
+    public boolean requestCancel() {
+        Runnable interrupt;
+        synchronized (this) {
+            if (!isActive()) {
+                return false;
+            }
+            cancelRequested = true;
+            interrupt = canceller;
+        }
+        // Outside the lock: the hook reaches into KeY's proof control, which does its own
+        // locking, and holding two locks in an order we do not control invites a deadlock.
+        if (interrupt != null) {
+            interrupt.run();
+        }
+        return true;
+    }
+
+    /**
+     * Whether the client asked for this task to stop.
+     *
+     * @return {@code true} once cancellation has been requested
+     */
+    public synchronized boolean isCancelRequested() {
+        return cancelRequested;
     }
 
     /**

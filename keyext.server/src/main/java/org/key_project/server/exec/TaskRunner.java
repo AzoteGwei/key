@@ -54,12 +54,41 @@ public final class TaskRunner {
      * @return the handle the client polls
      */
     public TaskHandle launch(TaskKind kind, @Nullable Object subject, Work work) {
-        TaskState task = tasks.create(kind, subject);
+        return start(tasks.create(kind, subject), work);
+    }
+
+    /**
+     * Queues work that must be the only one running on its subject.
+     *
+     * @param kind what the work does
+     * @param subject what it operates on
+     * @param work the work itself
+     * @return the handle the client polls
+     * @throws RpcException with {@link org.key_project.server.rpc.RpcErrorCode#TASK_CONFLICT} when
+     *         another task is already active on that subject
+     */
+    public TaskHandle launchExclusive(TaskKind kind, Object subject, Work work) {
+        return start(tasks.createExclusive(kind, subject), work);
+    }
+
+    private TaskHandle start(TaskState task, Work work) {
         executor.submit(() -> {
+            if (task.isCancelRequested()) {
+                // Cancelled while still queued; the work must not start at all.
+                task.cancelled();
+                return null;
+            }
             task.running();
             control.setCurrentTask(task);
             try {
-                task.succeeded(work.run());
+                Object product = work.run(task);
+                if (task.isCancelRequested()) {
+                    // The work returned, but only because it was asked to stop. Reporting it as
+                    // succeeded would present a half-finished run as a completed one.
+                    task.cancelled();
+                } else {
+                    task.succeeded(product);
+                }
             } catch (RpcException e) {
                 LOGGER.debug("Task {} failed with {}", task.taskId(), e.errorCode(), e);
                 task.failed(e.data() != null ? e.data() : KeyErrors.describe(e));
@@ -83,10 +112,11 @@ public final class TaskRunner {
         /**
          * Performs the work.
          *
+         * @param task the task being run, so long work can register how to interrupt it
          * @return the product to publish on the task, may be {@code null}
          * @throws Exception when the work fails
          */
         @Nullable
-        Object run() throws Exception;
+        Object run(TaskState task) throws Exception;
     }
 }
