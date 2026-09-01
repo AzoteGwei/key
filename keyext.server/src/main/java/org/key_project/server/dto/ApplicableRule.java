@@ -6,24 +6,30 @@ package org.key_project.server.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * A rule that can be applied to a goal here and now.
+ * A rule that can be applied to a goal here and now, and how to write it down.
  *
  * <p>
- * One entry per place the rule applies, so a rule that appears twice really does match twice.
- * That matters for using it: a proof script's {@code rule "name";} refuses an ambiguous match and
- * needs {@code occ=} or {@code formula=} to pick one.
+ * {@code script} is the useful field. A rule name on its own is often not enough — a third to a
+ * half of the rules offered on a real goal match in more than one place, and a script naming one
+ * without saying which is refused — so the line that actually applies it is reported rather than
+ * left to be reconstructed.
  *
- * @param ruleId the taclet's name, which is what a proof script's {@code rule} command takes
+ * @param ruleId the taclet's name
  * @param kind how the rule finds what it applies to
- * @param side which side of the turnstile it applies on, absent for {@link RuleKind#NO_FIND}
- * @param index the formula on that side, absent for {@link RuleKind#NO_FIND}
- * @param needsInstantiation whether the rule has schema variables still to be filled in. When
- *        {@code true} a bare {@code rule "name";} is not enough and the script has to supply them
- *        with {@code inst_…}
+ * @param side which side its first match is on, absent for {@link RuleKind#NO_FIND}
+ * @param index the formula its first match is under, absent for {@link RuleKind#NO_FIND}
+ * @param needsInstantiation whether schema variables remain to be filled in, which a script has
+ *        to supply with {@code inst_…}
  * @param needsAssumption whether the rule has an {@code \assumes} clause with no instantiation
- *        chosen. When {@code true} a script has to say which formula satisfies it
+ *        chosen, which a script has to make
+ * @param occurrences how many places the rule matches. Beyond the first they are reached by
+ *        raising the occurrence number in {@code script}, which counts from zero
+ * @param script the line to hand to {@code goal.applyScript} to apply the first match. Absent
+ *        when the rule needs input this cannot supply, and always absent for
+ *        {@link RuleKind#NO_FIND}: the {@code rule} command filters its candidates to positioned
+ *        applications before counting them, so it refuses those whatever is written
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApplicableRule(String ruleId, RuleKind kind, SequentSide side, Integer index,
-        boolean needsInstantiation, boolean needsAssumption) {
+        boolean needsInstantiation, boolean needsAssumption, int occurrences, String script) {
 }

@@ -1958,7 +1958,7 @@
       },
       "ApplicableRule": {
         "type": "object",
-        "description": "A rule that applies to a goal here and now, with one entry per place it applies. A rule listed several times matches several times, which is what makes a script's bare `rule \"name\";` refuse it as ambiguous.",
+        "description": "A rule that applies to a goal here and now, and how to write it down. `script` is the useful field: a rule name alone is often not enough, since a third to a half of the rules offered on a real goal match in more than one place and a script naming one without saying which is refused. The enumeration mirrors the `rule` script command's own, so the occurrence count reported is the count that command will find.",
         "properties": {
           "ruleId": {
             "type": "string",
@@ -1968,11 +1968,12 @@
             "$ref": "#/components/schemas/RuleKind"
           },
           "side": {
-            "$ref": "#/components/schemas/SequentSide"
+            "$ref": "#/components/schemas/SequentSide",
+            "description": "Which side the first match is on. Absent for NO_FIND."
           },
           "index": {
             "type": "integer",
-            "description": "The formula on that side. Absent for NO_FIND."
+            "description": "The formula the first match is under. Absent for NO_FIND."
           },
           "needsInstantiation": {
             "type": "boolean",
@@ -1981,18 +1982,27 @@
           "needsAssumption": {
             "type": "boolean",
             "description": "The rule has an \\assumes clause and no instantiation has been chosen."
+          },
+          "occurrences": {
+            "type": "integer",
+            "description": "How many places the rule matches. Beyond the first they are reached by raising the occurrence number in `script`, which counts from zero."
+          },
+          "script": {
+            "type": "string",
+            "description": "The line to hand to goal.applyScript to apply the first match. Absent when the rule needs input this cannot supply — see needsInstantiation and needsAssumption."
           }
         },
         "required": [
           "ruleId",
           "kind",
           "needsInstantiation",
-          "needsAssumption"
+          "needsAssumption",
+          "occurrences"
         ]
       },
       "GoalRules": {
         "type": "object",
-        "description": "What could still be applied to a goal by hand: the complement of stuck points. Those say what wants to apply and cannot; this says what could apply and the automatic strategy did not choose, which after a search that came back EXHAUSTED is what is left to look at. No judgement is offered about which are worth trying — cut and hide_left apply almost anywhere — and nothing is promised about applying one straight away: the obstacles reported are those visible from a survey of the top level of each formula, so a rule listed once may still match inside a term. Candidates, not promises.",
+        "description": "What could still be applied to a goal by hand: the complement of stuck points. Those say what wants to apply and cannot; this says what could apply and the automatic strategy did not choose, which after a search that came back EXHAUSTED is what is left to look at. No judgement is offered about which are worth trying — cut and hide_left apply almost anywhere. Rules carrying a `script` can be applied as they stand; the rest are offered because they are genuinely applicable and a caller may know what to supply.",
         "properties": {
           "goalId": {
             "type": "integer"

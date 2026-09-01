@@ -187,61 +187,90 @@ class DiagnosticsMethodsTest {
     }
 
     @Test
-    void theObstaclesItNamesAreTheOnesAScriptRunsInto() throws Exception {
-        String proofId = symbolicallyExecute("broken-max", "Max");
-        awaitTask(client.result("proof.runAuto", proof(proofId)).get("taskId").asText());
+    void theScriptLineItGivesActuallyApplies() throws Exception {
+        String envId = loadFixture("broken-max");
+
+        List<String> scripts = new ArrayList<>();
+        String first = stuckProofIn(envId, "Max");
+        int goalId = client.result("goal.list", proof(first)).get(0).get("goalId").asInt();
+        for (JsonNode rule : client.result("diagnostics.listApplicableRules", goal(first, goalId))
+                .get("rules")) {
+            if (rule.has("script")) {
+                scripts.add(rule.get("script").asText());
+            }
+        }
+        assertThat(scripts).describedAs("some rule can be applied as it stands").isNotEmpty();
+        // Roughly half of them match in more than one place, so if the occurrence number were
+        // wrong this would be a coin flip rather than a test.
+        assertThat(scripts).anyMatch(line -> line.contains("occ="));
+
+        // Every one of them, not a sample. A script line that does not apply is worse than no
+        // script line: it reads like an instruction and fails like a bug, and the caller has no
+        // way to tell which of the two it is looking at. Each is tried on a proof of its own,
+        // because applying one changes the goal the next was written for.
+        for (String script : scripts) {
+            String proofId = stuckProofIn(envId, "Max");
+            int goal = client.result("goal.list", proof(proofId)).get(0).get("goalId").asInt();
+            JsonNode applied = awaitTask(client.result("goal.applyScript",
+                "{\"goal\":{\"proofId\":\"" + proofId + "\",\"goalId\":" + goal
+                    + "},\"script\":" + quote(script) + "}").get("taskId").asText());
+            assertThat(applied.get("status").asText())
+                    .describedAs("%s -> %s", script, applied).isEqualTo("SUCCEEDED");
+        }
+    }
+
+    @Test
+    void aRuleNeedingInputIsOfferedWithoutAScriptLine() throws Exception {
+        String proofId = stuckProofIn(loadFixture("broken-max"), "Max");
         int goalId = client.result("goal.list", proof(proofId)).get(0).get("goalId").asInt();
 
         JsonNode rules = client.result("diagnostics.listApplicableRules", goal(proofId, goalId))
                 .get("rules");
+
         JsonNode blocked = null;
         for (JsonNode rule : rules) {
-            if (rule.get("needsAssumption").asBoolean()) {
+            if (rule.get("needsAssumption").asBoolean()
+                    || rule.get("needsInstantiation").asBoolean()) {
                 blocked = rule;
                 break;
             }
         }
-        assertThat(blocked).describedAs("some rule needs an assumption chosen").isNotNull();
+        assertThat(blocked).describedAs("some rule needs input").isNotNull();
+        // Offered, because it is genuinely applicable and a caller may know what to supply. But
+        // without a line, because any line this could invent would not work.
+        assertThat(blocked.has("script")).isFalse();
 
-        // The flag has to mean something. A rule marked as needing an assumption is exactly a
-        // rule a script cannot apply by name, and saying so beats letting a caller find out from
-        // a failure it has no way to interpret.
         JsonNode refused = awaitTask(client.result("goal.applyScript",
             "{\"goal\":{\"proofId\":\"" + proofId + "\",\"goalId\":" + goalId
                 + "},\"script\":\"rule \\\"" + blocked.get("ruleId").asText()
                 + "\\\";\"}").get("taskId").asText());
         assertThat(refused.get("status").asText()).isEqualTo("FAILED");
-        assertThat(refused.get("error").get("detail").asText()).contains("assumes");
     }
 
     @Test
-    void aRuleThatMatchesInSeveralPlacesIsListedOncePerPlace() throws Exception {
-        String proofId = symbolicallyExecute("broken-max", "Max");
-        awaitTask(client.result("proof.runAuto", proof(proofId)).get("taskId").asText());
+    void aRuleThatMatchesInSeveralPlacesSaysHowManyAndHowToPick() throws Exception {
+        String proofId = stuckProofIn(loadFixture("broken-max"), "Max");
         int goalId = client.result("goal.list", proof(proofId)).get(0).get("goalId").asInt();
 
-        JsonNode rules = client.result("diagnostics.listApplicableRules", goal(proofId, goalId))
-                .get("rules");
-        List<JsonNode> hideLeft = new ArrayList<>();
-        for (JsonNode rule : rules) {
+        JsonNode hideLeft = null;
+        for (JsonNode rule : client.result("diagnostics.listApplicableRules",
+            goal(proofId, goalId)).get("rules")) {
             if ("hide_left".equals(rule.get("ruleId").asText())) {
-                hideLeft.add(rule);
+                hideLeft = rule;
             }
         }
+        assertThat(hideLeft).isNotNull();
 
-        // hide_left matches every antecedent formula. Collapsing those into one entry would hide
-        // the very thing that makes `rule "hide_left";` fail as ambiguous.
-        assertThat(hideLeft.size()).isGreaterThan(1);
-        assertThat(hideLeft).allSatisfy(
-            rule -> assertThat(rule.get("side").asText()).isEqualTo("ANTECEDENT"));
-        assertThat(hideLeft.stream().map(rule -> rule.get("index").asInt()).distinct().count())
-                .isEqualTo(hideLeft.size());
+        // hide_left matches every antecedent formula. Saying how many and handing over a line
+        // that picks one is the difference between a rule being mentionable and being usable.
+        assertThat(hideLeft.get("occurrences").asInt()).isGreaterThan(1);
+        assertThat(hideLeft.get("script").asText()).contains("occ=");
 
-        // And the report is right about it: naming it alone is refused.
         JsonNode ambiguous = awaitTask(client.result("goal.applyScript",
             "{\"goal\":{\"proofId\":\"" + proofId + "\",\"goalId\":" + goalId
                 + "},\"script\":\"rule \\\"hide_left\\\";\"}").get("taskId").asText());
-        assertThat(ambiguous.get("status").asText()).isEqualTo("FAILED");
+        assertThat(ambiguous.get("status").asText())
+                .describedAs("naming it without an occurrence is refused").isEqualTo("FAILED");
     }
 
     @Test
@@ -252,13 +281,21 @@ class DiagnosticsMethodsTest {
 
         client.result("diagnostics.listApplicableRules", goal(proofId, goalId));
 
-        // Enumeration builds rule applications and throws them away. If that left a mark, asking
+        // Enumeration builds rule applications, and now also puts the rule index back into
+        // interactive mode, before throwing all of it away. If any of that left a mark, asking
         // what could be done would change what has been done.
         JsonNode after = client.result("proof.getStatistics", proof(proofId));
         assertThat(after.get("nodes").asInt()).isEqualTo(before.get("nodes").asInt());
         assertThat(after.get("totalRuleApps").asInt())
                 .isEqualTo(before.get("totalRuleApps").asInt());
         assertThat(after.get("openGoals").asInt()).isEqualTo(before.get("openGoals").asInt());
+        assertThat(after.get("closed").asBoolean()).isFalse();
+
+        // And the proof can still be worked on afterwards, which the index mode change could
+        // plausibly have broken.
+        JsonNode ran = awaitTask(client.result("proof.runAuto", proof(proofId))
+                .get("taskId").asText());
+        assertThat(ran.get("status").asText()).isEqualTo("SUCCEEDED");
     }
 
     @Test
@@ -285,6 +322,36 @@ class DiagnosticsMethodsTest {
             "{\"goal\":{\"proofId\":\"" + proofId + "\",\"goalId\":99999}}")).isEqualTo(-32003);
         assertThat(client.errorCode("diagnostics.listStuckPoints",
             "{\"proof\":{\"proofId\":\"prf-deadbeef\"}}")).isEqualTo(-32002);
+    }
+
+    private static String quote(String text) {
+        StringBuilder out = new StringBuilder("\"");
+        for (char each : text.toCharArray()) {
+            if (each == '"' || each == '\\') {
+                out.append('\\');
+            }
+            out.append(each);
+        }
+        return out.append('"').toString();
+    }
+
+    private String loadFixture(String fixture) throws Exception {
+        Path path = Path.of("src/test/resources/fixtures", fixture).toAbsolutePath();
+        JsonNode loaded = awaitTask(client.result("environment.load",
+            "{\"path\":\"" + path.toString().replace("\\", "\\\\") + "\"}").get("taskId")
+                .asText());
+        return loaded.get("result").get("envId").asText();
+    }
+
+    /** Starts a fresh proof in an already loaded environment and runs it to a standstill. */
+    private String stuckProofIn(String envId, String className) throws Exception {
+        String contractId = client.result("environment.listProofObligations",
+            "{\"env\":{\"envId\":\"" + envId + "\"},\"targetClass\":\"" + className + "\"}")
+                .get(0).get("contractId").asText();
+        String proofId = client.result("proof.start", "{\"env\":{\"envId\":\"" + envId
+            + "\"},\"contractId\":\"" + contractId + "\"}").get("proofId").asText();
+        awaitTask(client.result("proof.runAuto", proof(proofId)).get("taskId").asText());
+        return proofId;
     }
 
     private static String goal(String proofId, int goalId) {
