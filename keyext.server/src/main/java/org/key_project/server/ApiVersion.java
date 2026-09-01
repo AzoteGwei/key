@@ -17,12 +17,13 @@ public final class ApiVersion {
      * The API version this build speaks.
      *
      * <p>
-     * Frozen at 1.0.0. Within 1.x nothing already published may be taken away or given a new
-     * meaning: no method removed, no field removed, no field redefined, and enumerations gain
-     * values but never lose them. The protocol changed twelve times while it was being found;
-     * anything built on it now needs it to stop moving.
+     * Within 1.x nothing already published may be taken away or given a new meaning: no method
+     * removed, no field removed, no field redefined, and enumerations gain values but never lose
+     * them. The protocol changed twelve times while it was being found; anything built on it now
+     * needs it to stop moving. Adding is still allowed and moves the minor version, which is what
+     * 1.1.0 is: a method that was not there before, and nothing else touched.
      */
-    public static final String CURRENT = "1.0.0";
+    public static final String CURRENT = "1.1.0";
 
     private ApiVersion() {
     }

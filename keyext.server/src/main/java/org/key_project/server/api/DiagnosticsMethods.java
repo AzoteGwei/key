@@ -9,6 +9,8 @@ import java.util.List;
 import de.uka.ilkd.key.proof.Goal;
 import de.uka.ilkd.key.proof.Proof;
 
+import org.key_project.server.ServerUserInterfaceControl;
+import org.key_project.server.diagnostics.ApplicableRuleProbe;
 import org.key_project.server.diagnostics.StuckPointProbe;
 import org.key_project.server.dto.GoalDiagnostics;
 import org.key_project.server.dto.GoalRef;
@@ -34,16 +36,20 @@ import org.jspecify.annotations.Nullable;
  */
 public final class DiagnosticsMethods {
 
+    private final ServerUserInterfaceControl control;
     private final ProofRegistry proofs;
     private final TaskRegistry tasks;
 
     /**
      * Creates the handlers.
      *
+     * @param control the control whose proof control enumerates applicable rules
      * @param proofs where started proofs are kept
      * @param tasks used to tell whether a proof is being worked on right now
      */
-    public DiagnosticsMethods(ProofRegistry proofs, TaskRegistry tasks) {
+    public DiagnosticsMethods(ServerUserInterfaceControl control, ProofRegistry proofs,
+            TaskRegistry tasks) {
+        this.control = control;
         this.proofs = proofs;
         this.tasks = tasks;
     }
@@ -58,6 +64,8 @@ public final class DiagnosticsMethods {
             params -> explainGoal(params.as(ExplainGoalRequest.class))));
         dispatcher.register(new RpcMethod("diagnostics.listStuckPoints", Concurrency.INLINE,
             params -> listStuckPoints(params.as(ListStuckPointsRequest.class))));
+        dispatcher.register(new RpcMethod("diagnostics.listApplicableRules", Concurrency.INLINE,
+            params -> listApplicableRules(params.as(ListApplicableRulesRequest.class))));
     }
 
     private Object explainGoal(ExplainGoalRequest request) {
@@ -79,13 +87,47 @@ public final class DiagnosticsMethods {
     }
 
     /**
+     * Lists what a person could still apply to a goal.
+     *
+     * <p>
+     * The complement of the stuck points. Those say what wants to apply and cannot; this says
+     * what could apply and the automatic strategy did not choose, which after a search that ran
+     * out of ideas is the only thing left to look at.
+     *
+     * @param request which goal, and how much to report
+     * @return the rules, and whether there were more
+     */
+    private Object listApplicableRules(ListApplicableRulesRequest request) {
+        RegisteredProof registered = requireIdleProof(request.goal().proofId());
+        Goal goal = requireGoal(registered.proof(), request.goal());
+        return ApplicableRuleProbe.probe(control.getProofControl(), goal,
+            limit(request.maxRules()));
+    }
+
+    private static int limit(@Nullable Integer requested) {
+        if (requested == null) {
+            return ApplicableRuleProbe.DEFAULT_MAX_RULES;
+        }
+        if (requested < 1) {
+            throw new RpcException(RpcErrorCode.INVALID_PARAMS,
+                "maxRules must be at least 1, got " + requested);
+        }
+        return requested;
+    }
+
+    /**
      * Resolves a proof, provided nothing is currently changing it.
      *
      * <p>
      * Unlike {@code goal.getSequent}, which only reads terms that never change once built, the
-     * probe builds rule applications against live goal state. Doing that while a search is
+     * probes build rule applications against live goal state. Doing that while a search is
      * rewriting the same proof is a race, and an answer computed from a proof mid-rewrite would
      * be worse than no answer. Clients cancel or wait, and are told which.
+     *
+     * <p>
+     * Rule enumeration needs this for a second reason: KeY consults its interactive rule index
+     * only while no automatic search is running. Asked during one it would quietly answer from
+     * the strategy-filtered subset instead, which is a different question than the one asked.
      *
      * @param proofId the proof to resolve
      * @return the proof

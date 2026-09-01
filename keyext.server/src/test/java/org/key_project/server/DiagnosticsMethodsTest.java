@@ -6,6 +6,8 @@ package org.key_project.server;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.AfterEach;
@@ -158,6 +160,124 @@ class DiagnosticsMethodsTest {
     }
 
     @Test
+    void namesRulesAProofScriptCouldUseWhenTheProverHasGivenUp() throws Exception {
+        String proofId = symbolicallyExecute("broken-max", "Max");
+        JsonNode finished = awaitTask(client.result("proof.runAuto", proof(proofId))
+                .get("taskId").asText());
+        assertThat(finished.get("result").get("outcome").asText()).isEqualTo("EXHAUSTED");
+
+        int goalId = client.result("goal.list", proof(proofId)).get(0).get("goalId").asInt();
+        JsonNode answer = client.result("diagnostics.listApplicableRules", goal(proofId, goalId));
+
+        // The complement of the stuck points, which are empty here. The prover ran out of ideas;
+        // these are the ideas a person would still have.
+        assertThat(client.result("diagnostics.listStuckPoints", proof(proofId)).get(0)
+                .get("stuckPoints")).isEmpty();
+        assertThat(answer.get("goalId").asInt()).isEqualTo(goalId);
+        assertThat(answer.get("rules")).isNotEmpty();
+        assertThat(answer.get("truncated").asBoolean()).isFalse();
+
+        List<String> ruleIds = new ArrayList<>();
+        for (JsonNode rule : answer.get("rules")) {
+            assertThat(rule.get("kind").asText()).isIn("NO_FIND", "FIND", "REWRITE");
+            ruleIds.add(rule.get("ruleId").asText());
+        }
+        // Names, not descriptions: these are what a proof script's `rule` command takes.
+        assertThat(ruleIds).contains("cut");
+    }
+
+    @Test
+    void theObstaclesItNamesAreTheOnesAScriptRunsInto() throws Exception {
+        String proofId = symbolicallyExecute("broken-max", "Max");
+        awaitTask(client.result("proof.runAuto", proof(proofId)).get("taskId").asText());
+        int goalId = client.result("goal.list", proof(proofId)).get(0).get("goalId").asInt();
+
+        JsonNode rules = client.result("diagnostics.listApplicableRules", goal(proofId, goalId))
+                .get("rules");
+        JsonNode blocked = null;
+        for (JsonNode rule : rules) {
+            if (rule.get("needsAssumption").asBoolean()) {
+                blocked = rule;
+                break;
+            }
+        }
+        assertThat(blocked).describedAs("some rule needs an assumption chosen").isNotNull();
+
+        // The flag has to mean something. A rule marked as needing an assumption is exactly a
+        // rule a script cannot apply by name, and saying so beats letting a caller find out from
+        // a failure it has no way to interpret.
+        JsonNode refused = awaitTask(client.result("goal.applyScript",
+            "{\"goal\":{\"proofId\":\"" + proofId + "\",\"goalId\":" + goalId
+                + "},\"script\":\"rule \\\"" + blocked.get("ruleId").asText()
+                + "\\\";\"}").get("taskId").asText());
+        assertThat(refused.get("status").asText()).isEqualTo("FAILED");
+        assertThat(refused.get("error").get("detail").asText()).contains("assumes");
+    }
+
+    @Test
+    void aRuleThatMatchesInSeveralPlacesIsListedOncePerPlace() throws Exception {
+        String proofId = symbolicallyExecute("broken-max", "Max");
+        awaitTask(client.result("proof.runAuto", proof(proofId)).get("taskId").asText());
+        int goalId = client.result("goal.list", proof(proofId)).get(0).get("goalId").asInt();
+
+        JsonNode rules = client.result("diagnostics.listApplicableRules", goal(proofId, goalId))
+                .get("rules");
+        List<JsonNode> hideLeft = new ArrayList<>();
+        for (JsonNode rule : rules) {
+            if ("hide_left".equals(rule.get("ruleId").asText())) {
+                hideLeft.add(rule);
+            }
+        }
+
+        // hide_left matches every antecedent formula. Collapsing those into one entry would hide
+        // the very thing that makes `rule "hide_left";` fail as ambiguous.
+        assertThat(hideLeft.size()).isGreaterThan(1);
+        assertThat(hideLeft).allSatisfy(
+            rule -> assertThat(rule.get("side").asText()).isEqualTo("ANTECEDENT"));
+        assertThat(hideLeft.stream().map(rule -> rule.get("index").asInt()).distinct().count())
+                .isEqualTo(hideLeft.size());
+
+        // And the report is right about it: naming it alone is refused.
+        JsonNode ambiguous = awaitTask(client.result("goal.applyScript",
+            "{\"goal\":{\"proofId\":\"" + proofId + "\",\"goalId\":" + goalId
+                + "},\"script\":\"rule \\\"hide_left\\\";\"}").get("taskId").asText());
+        assertThat(ambiguous.get("status").asText()).isEqualTo("FAILED");
+    }
+
+    @Test
+    void enumeratingRulesLeavesTheProofAlone() throws Exception {
+        String proofId = symbolicallyExecute("no-invariant", "Summer");
+        JsonNode before = client.result("proof.getStatistics", proof(proofId));
+        int goalId = client.result("goal.list", proof(proofId)).get(0).get("goalId").asInt();
+
+        client.result("diagnostics.listApplicableRules", goal(proofId, goalId));
+
+        // Enumeration builds rule applications and throws them away. If that left a mark, asking
+        // what could be done would change what has been done.
+        JsonNode after = client.result("proof.getStatistics", proof(proofId));
+        assertThat(after.get("nodes").asInt()).isEqualTo(before.get("nodes").asInt());
+        assertThat(after.get("totalRuleApps").asInt())
+                .isEqualTo(before.get("totalRuleApps").asInt());
+        assertThat(after.get("openGoals").asInt()).isEqualTo(before.get("openGoals").asInt());
+    }
+
+    @Test
+    void saysSoWhenItStoppedNamingRulesEarly() throws Exception {
+        String proofId = symbolicallyExecute("no-invariant", "Summer");
+        int goalId = client.result("goal.list", proof(proofId)).get(0).get("goalId").asInt();
+
+        JsonNode capped = client.result("diagnostics.listApplicableRules",
+            "{\"goal\":{\"proofId\":\"" + proofId + "\",\"goalId\":" + goalId
+                + "},\"maxRules\":3}");
+
+        assertThat(capped.get("rules")).hasSize(3);
+        assertThat(capped.get("truncated").asBoolean()).isTrue();
+        assertThat(client.errorCode("diagnostics.listApplicableRules",
+            "{\"goal\":{\"proofId\":\"" + proofId + "\",\"goalId\":" + goalId
+                + "},\"maxRules\":0}")).isEqualTo(-32602);
+    }
+
+    @Test
     void rejectsGoalsAndProofsItDoesNotKnow() throws Exception {
         String proofId = symbolicallyExecute("no-invariant", "Summer");
 
@@ -165,6 +285,10 @@ class DiagnosticsMethodsTest {
             "{\"goal\":{\"proofId\":\"" + proofId + "\",\"goalId\":99999}}")).isEqualTo(-32003);
         assertThat(client.errorCode("diagnostics.listStuckPoints",
             "{\"proof\":{\"proofId\":\"prf-deadbeef\"}}")).isEqualTo(-32002);
+    }
+
+    private static String goal(String proofId, int goalId) {
+        return "{\"goal\":{\"proofId\":\"" + proofId + "\",\"goalId\":" + goalId + "}}";
     }
 
     private String proof(String proofId) {

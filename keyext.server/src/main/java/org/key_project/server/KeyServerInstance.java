@@ -99,7 +99,7 @@ public final class KeyServerInstance implements AutoCloseable {
         new ProofMethods(options, control, environments, proofs, runner, loader)
                 .registerOn(dispatcher);
         new GoalMethods(control, proofs, runner).registerOn(dispatcher);
-        new DiagnosticsMethods(proofs, tasks).registerOn(dispatcher);
+        new DiagnosticsMethods(control, proofs, tasks).registerOn(dispatcher);
 
         this.transport = new HttpTransport(dispatcher, events, options.port(), this::onRequest);
         this.registry = new InstanceRegistry(options.workspace());
