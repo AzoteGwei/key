@@ -4,6 +4,7 @@
 package org.key_project.prover.engine.impl;
 
 import org.key_project.prover.engine.ProofSearchInformation;
+import org.key_project.prover.engine.StopReason;
 import org.key_project.prover.proof.ProofGoal;
 import org.key_project.prover.proof.ProofObject;
 
@@ -39,6 +40,9 @@ public class ApplyStrategyInfo<Proof extends ProofObject<Goal>, Goal extends @Nu
     /// applications reached etc.
     private final String message;
 
+    /// The same ending as [#message], in a form a caller can branch on.
+    private final StopReason stopReason;
+
     /// One of the non-closeable goals that lead to termination of the strategy execution, if one
     /// exists.
     private final @Nullable Goal nonCloseableGoal;
@@ -68,10 +72,13 @@ public class ApplyStrategyInfo<Proof extends ProofObject<Goal>, Goal extends @Nu
     /// @param timeInMillis the total execution time in milliseconds
     /// @param appliedRuleAppsCount the number of applied rule applications
     /// @param nrClosedGoals the number of successfully closed goals
+    /// @param stopReason why the search stopped, as a value rather than as prose
     public ApplyStrategyInfo(String message, Proof proof, @Nullable Throwable error,
             @Nullable Goal nonCloseableGoal,
-            long timeInMillis, int appliedRuleAppsCount, int nrClosedGoals) {
+            long timeInMillis, int appliedRuleAppsCount, int nrClosedGoals,
+            StopReason stopReason) {
         this.message = message;
+        this.stopReason = stopReason;
         this.proof = proof;
         this.error = error;
         this.nonCloseableGoal = nonCloseableGoal;
@@ -84,6 +91,12 @@ public class ApplyStrategyInfo<Proof extends ProofObject<Goal>, Goal extends @Nu
     @Override
     public String reason() {
         return message;
+    }
+
+    /// {@inheritDoc}
+    @Override
+    public StopReason stopReason() {
+        return stopReason;
     }
 
     /// {@inheritDoc}
@@ -136,8 +149,27 @@ public class ApplyStrategyInfo<Proof extends ProofObject<Goal>, Goal extends @Nu
             nonCloseableGoal != null ? nonCloseableGoal : other.nonCloseableGoal(),
             timeInMillis + other.getTime(),
             appliedRuleAppsCount + other.getNumberOfAppliedRuleApps(),
-            nrClosedGoals + other.getNumberOfClosedGoals());
+            nrClosedGoals + other.getNumberOfClosedGoals(),
+            moreDecisive(stopReason, other.stopReason()));
     }
+
+    /// Picks the ending that better explains a combined run.
+    ///
+    /// Batches are joined, and a batch that ran out of ideas says less about the whole than one
+    /// that was interrupted or failed. Ordering by how decisive the ending is keeps the combined
+    /// answer from being the blandest of its parts.
+    ///
+    /// @param left one ending
+    /// @param right the other
+    /// @return whichever of the two says more
+    private static StopReason moreDecisive(StopReason left, StopReason right) {
+        return DECISIVENESS.indexOf(left) <= DECISIVENESS.indexOf(right) ? left : right;
+    }
+
+    private static final java.util.List<StopReason> DECISIVENESS = java.util.List.of(
+        StopReason.ERROR, StopReason.INTERRUPTED, StopReason.PROOF_ERRONEOUS,
+        StopReason.NON_CLOSEABLE_GOAL, StopReason.STOP_CONDITION, StopReason.TIMEOUT,
+        StopReason.MAX_RULES, StopReason.EXHAUSTED);
 
     /// {@inheritDoc}
     @Override

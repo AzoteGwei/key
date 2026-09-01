@@ -51,6 +51,14 @@ public interface ProofSearchInformation<P extends ProofObject<G>, G extends @Nul
     /// @return a string describing the reason for applying the strategy
     String reason();
 
+    /// Retrieves the same ending as [#reason()], as a value that can be branched on.
+    ///
+    /// The message is written for people and is free to change; this is not. Callers deciding
+    /// what to do next -- give the search more budget, or stop and help it -- should read this.
+    ///
+    /// @return why the search stopped
+    StopReason stopReason();
+
     /// Returns the proof object associated with this strategy application.
     ///
     /// The proof object represents the state of the proof at the

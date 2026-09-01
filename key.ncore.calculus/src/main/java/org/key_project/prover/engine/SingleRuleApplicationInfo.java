@@ -41,6 +41,9 @@ public class SingleRuleApplicationInfo {
     /// The rule that was applied.
     private final @Nullable RuleApp appliedRuleApp;
 
+    /// Why the search stopped, when this info reports a stop. Null for a successful application.
+    private final @Nullable StopReason stopReason;
+
     /// Constructs a new `SingleRuleApplicationInfo` for a successful rule application.
     ///
     /// @param mayCloseableGoal the proof goal that may be closed by this rule application.
@@ -51,6 +54,7 @@ public class SingleRuleApplicationInfo {
         this.goal = mayCloseableGoal;
         this.appliedRuleApp = appliedRuleApp;
         this.success = true;
+        this.stopReason = null;
     }
 
     /// Constructs a new `SingleRuleApplicationInfo` for a failed rule application.
@@ -59,11 +63,12 @@ public class SingleRuleApplicationInfo {
     /// @param nonCloseableGoal the proof goal that could not be closed by this rule application.
     /// @param appliedRuleApp the rule that was applied (if any).
     public SingleRuleApplicationInfo(String message, @Nullable ProofGoal<?> nonCloseableGoal,
-            @Nullable RuleApp appliedRuleApp) {
+            @Nullable RuleApp appliedRuleApp, StopReason stopReason) {
         this.message = message;
         this.goal = nonCloseableGoal;
         this.appliedRuleApp = appliedRuleApp;
         this.success = false;
+        this.stopReason = stopReason;
     }
 
     /// Checks whether the rule application was successful.
@@ -98,5 +103,12 @@ public class SingleRuleApplicationInfo {
     /// @return the applied rule, or `null` if no rule was applied.
     public @Nullable RuleApp getAppliedRuleApp() {
         return appliedRuleApp;
+    }
+
+    /// Why the search stopped.
+    ///
+    /// @return the reason, or `null` when a rule was applied and nothing stopped
+    public @Nullable StopReason stopReason() {
+        return stopReason;
     }
 }

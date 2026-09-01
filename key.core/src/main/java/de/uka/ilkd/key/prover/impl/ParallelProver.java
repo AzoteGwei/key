@@ -25,6 +25,7 @@ import de.uka.ilkd.key.settings.StrategySettings;
 import de.uka.ilkd.key.strategy.StrategyProperties;
 
 import org.key_project.prover.engine.GoalChooser;
+import org.key_project.prover.engine.StopReason;
 import org.key_project.prover.engine.TaskStartedInfo;
 import org.key_project.prover.engine.impl.ApplyStrategyInfo;
 import org.key_project.prover.engine.impl.DefaultProver;
@@ -156,6 +157,8 @@ public final class ParallelProver extends DefaultProver<Proof, Goal> {
     private final AtomicBoolean stopRequested = new AtomicBoolean();
     /** Set by {@link #requestStop} under the winning CAS; read once after the run. */
     private volatile @Nullable String stopMessage;
+    /** Written by the same winning CAS as {@link #stopMessage}, and always alongside it. */
+    private volatile @Nullable StopReason stopReason;
 
     /**
      * The first uncaught error from any worker, recorded before that worker rethrows. Read after
@@ -432,17 +435,46 @@ public final class ParallelProver extends DefaultProver<Proof, Goal> {
         final Throwable error = firstError.get();
         long time = System.currentTimeMillis() - startTime;
         final String message;
+        final StopReason reason;
         if (error != null) {
             message = "Error.";
+            reason = StopReason.ERROR;
         } else if (cancelled) {
             message = "Interrupted.";
+            reason = StopReason.INTERRUPTED;
         } else if (stopMessage != null) {
             message = stopMessage;
+            StopReason requested = stopReason;
+            reason = requested == null ? StopReason.STOP_CONDITION : requested;
         } else {
+            // Every worker ran out of goals it could advance, which is the same ending the
+            // single-threaded prover reports when its chooser is empty.
             message = "No more rules automatically applicable to any goal.";
+            reason = StopReason.EXHAUSTED;
         }
         return new ApplyStrategyInfo<>(message, proof, error, nonCloseableGoal, time, countApplied,
-            closedGoals);
+            closedGoals, reason);
+    }
+
+    /**
+     * Works out which of the two budgets the default stop condition stopped on.
+     *
+     * <p>
+     * The condition reports both endings with one message. They call for opposite responses, so
+     * the same values it tests are tested again here to say which it was.
+     *
+     * @param startTime when the run began, in milliseconds
+     * @param applied how many rules had been applied
+     * @return which budget ran out
+     */
+    private StopReason budgetReason(long startTime, int applied) {
+        if (timeout >= 0 && System.currentTimeMillis() - startTime >= timeout) {
+            return StopReason.TIMEOUT;
+        }
+        if (applied >= maxApplications) {
+            return StopReason.MAX_RULES;
+        }
+        return StopReason.STOP_CONDITION;
     }
 
     /**
@@ -540,7 +572,8 @@ public final class ParallelProver extends DefaultProver<Proof, Goal> {
                     // loop exit; parked workers wake through the scheduler as with any stop).
                     // Checking a volatile flag once per rule application is free next to the
                     // step itself; no push notification into the workers is needed.
-                    requestStop("Proof search stopped: an essential proof listener failed.", null);
+                    requestStop("Proof search stopped: an essential proof listener failed.",
+                        StopReason.PROOF_ERRONEOUS, null);
                     scheduler.reoffer(goal);
                     break;
                 }
@@ -561,7 +594,7 @@ public final class ParallelProver extends DefaultProver<Proof, Goal> {
             // finally;
             // rethrow so the failure still surfaces via this worker's Future.
             firstError.compareAndSet(null, t);
-            requestStop("Error.", null);
+            requestStop("Error.", StopReason.ERROR, null);
             throw t;
         }
     }
@@ -598,7 +631,7 @@ public final class ParallelProver extends DefaultProver<Proof, Goal> {
             if (!stopCondition.isGoalAllowed(goal, maxApplications, timeout, startTime,
                 appliedSteps.get())) {
                 requestStop(stopCondition.getGoalNotAllowedMessage(goal, maxApplications,
-                    timeout, startTime, appliedSteps.get()), null);
+                    timeout, startTime, appliedSteps.get()), StopReason.STOP_CONDITION, null);
                 return;
             }
 
@@ -614,7 +647,8 @@ public final class ParallelProver extends DefaultProver<Proof, Goal> {
                 // once a whole cycle makes none -- mirroring the single-threaded chooser, which
                 // retries goals across passes instead of discarding them on the first empty pass.
                 if (stopAtFirstNonClosableGoal) {
-                    requestStop("Could not close goal.", goal);
+                    requestStop("Could not close goal.", StopReason.NON_CLOSEABLE_GOAL,
+                        goal);
                 } else {
                     scheduler.stall(goal);
                     handled = true;
@@ -679,7 +713,7 @@ public final class ParallelProver extends DefaultProver<Proof, Goal> {
 
             if (stopCondition.shouldStop(maxApplications, timeout, startTime, applied, null)) {
                 requestStop(stopCondition.getStopMessage(maxApplications, timeout, startTime,
-                    applied, null), null);
+                    applied, null), budgetReason(startTime, applied), null);
             }
         } finally {
             // Backstop for goals that left the step early (stop requested, or rule aborted):
@@ -700,9 +734,10 @@ public final class ParallelProver extends DefaultProver<Proof, Goal> {
      * never
      * mix one's message with the other's goal.
      */
-    private void requestStop(String message, @Nullable Goal goal) {
+    private void requestStop(String message, StopReason reason, @Nullable Goal goal) {
         if (stopRequested.compareAndSet(false, true)) {
             stopMessage = message;
+            stopReason = reason;
             nonCloseableGoal = goal;
         }
     }

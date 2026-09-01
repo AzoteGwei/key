@@ -10,6 +10,7 @@ import org.key_project.prover.engine.AbstractProverCore;
 import org.key_project.prover.engine.GoalChooser;
 import org.key_project.prover.engine.SingleRuleApplicationInfo;
 import org.key_project.prover.engine.StopCondition;
+import org.key_project.prover.engine.StopReason;
 import org.key_project.prover.proof.ProofGoal;
 import org.key_project.prover.proof.ProofObject;
 import org.key_project.prover.rules.RuleApp;
@@ -113,7 +114,8 @@ public abstract class DefaultProver<Proof extends ProofObject<Goal>, Goal extend
                         "Proof search stopped: the proof is marked erroneous "
                             + "(an essential proof listener failed).",
                         proof, null, srInfo == null ? null : srInfo.getGoal(),
-                        System.currentTimeMillis() - time, countApplied, closedGoals);
+                        System.currentTimeMillis() - time, countApplied, closedGoals,
+                        StopReason.PROOF_ERRONEOUS);
                 }
                 var applyAutomaticTime = System.nanoTime();
                 try {
@@ -123,9 +125,11 @@ public abstract class DefaultProver<Proof extends ProofObject<Goal>, Goal extend
                     applyAutomatic += System.nanoTime() - applyAutomaticTime;
                 }
                 if (!srInfo.isSuccess()) {
+                    StopReason why = srInfo.stopReason();
                     return new ApplyStrategyInfo<>(srInfo.message(), proof,
                         null, srInfo.getGoal(),
-                        System.currentTimeMillis() - time, countApplied, closedGoals);
+                        System.currentTimeMillis() - time, countApplied, closedGoals,
+                        why == null ? StopReason.STOP_CONDITION : why);
                 }
                 countApplied++;
                 fireTaskProgress();
@@ -139,21 +143,42 @@ public abstract class DefaultProver<Proof extends ProofObject<Goal>, Goal extend
                 stopCondition.getStopMessage(maxApplications, timeout, time,
                     countApplied, srInfo),
                 proof, null, null, System.currentTimeMillis() - time, countApplied,
-                closedGoals);
+                closedGoals, budgetReason(time));
         } catch (InterruptedException e) {
             cancelled = true;
             return new ApplyStrategyInfo<Proof, Goal>("Interrupted.", proof, null,
                 goalChooser.getNextGoal(),
-                System.currentTimeMillis() - time, countApplied, closedGoals);
+                System.currentTimeMillis() - time, countApplied, closedGoals,
+                StopReason.INTERRUPTED);
         } catch (Throwable t) { // treated later in finished()
             LOGGER.warn("doWork exception", t);
             return new ApplyStrategyInfo<>("Error.", proof, t, null,
-                System.currentTimeMillis() - time, countApplied, closedGoals);
+                System.currentTimeMillis() - time, countApplied, closedGoals, StopReason.ERROR);
         } finally {
             time = (System.currentTimeMillis() - time);
             LOGGER.trace("Strategy stopped, applied {} steps in {}ms", countApplied, time);
             LOGGER.trace("applyAutomaticRule: {} ", applyAutomatic);
         }
+    }
+
+    /// Works out which of the two budgets the default stop condition stopped on.
+    ///
+    /// The condition's own message says "reached or timed out", which is exactly the ambiguity
+    /// worth removing: one of the two calls for a bigger budget and the other for a longer one.
+    /// The values are the same ones the condition tests, so this reports rather than guesses.
+    /// A stop condition that stopped for some other reason of its own falls through to
+    /// [StopReason#STOP_CONDITION].
+    ///
+    /// @param startTime when the search began, in milliseconds
+    /// @return which budget ran out
+    private StopReason budgetReason(long startTime) {
+        if (timeout >= 0 && System.currentTimeMillis() - startTime >= timeout) {
+            return StopReason.TIMEOUT;
+        }
+        if (countApplied >= maxApplications) {
+            return StopReason.MAX_RULES;
+        }
+        return StopReason.STOP_CONDITION;
     }
 
     /// Applies rules to goals using the active strategy until a stopping condition is met.
@@ -177,7 +202,8 @@ public abstract class DefaultProver<Proof extends ProofObject<Goal>, Goal extend
                 final var message = stopCondition.getGoalNotAllowedMessage(
                     g, maxApplications, timeout, startTime, countApplied);
 
-                return new SingleRuleApplicationInfo(message, g, null);
+                return new SingleRuleApplicationInfo(message, g, null,
+                    StopReason.STOP_CONDITION);
             }
 
             app = Objects.requireNonNull(g.getRuleAppManager()).next();
@@ -186,7 +212,8 @@ public abstract class DefaultProver<Proof extends ProofObject<Goal>, Goal extend
 
             if (app == null) {
                 if (stopAtFirstNonClosableGoal) {
-                    return new SingleRuleApplicationInfo("Could not close goal.", g, app);
+                    return new SingleRuleApplicationInfo("Could not close goal.", g, app,
+                        StopReason.NON_CLOSEABLE_GOAL);
                 }
                 goalChooser.removeGoal(g);
             } else {
@@ -195,7 +222,8 @@ public abstract class DefaultProver<Proof extends ProofObject<Goal>, Goal extend
         }
         if (app == null) {
             return new SingleRuleApplicationInfo(
-                "No more rules automatically applicable to any goal.", g, app);
+                "No more rules automatically applicable to any goal.", g, app,
+                StopReason.EXHAUSTED);
         } else {
             try {
                 @SuppressWarnings({ "nullness", "unused" })
