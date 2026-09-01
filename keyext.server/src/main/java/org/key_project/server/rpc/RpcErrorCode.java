@@ -42,7 +42,15 @@ public enum RpcErrorCode {
     /** A sequent format was requested that this version does not implement. */
     UNSUPPORTED_FORMAT(-32009),
     /** The task identifier is unknown. */
-    TASK_NOT_FOUND(-32010);
+    TASK_NOT_FOUND(-32010),
+    /**
+     * A proof could not be written to disk.
+     *
+     * <p>
+     * Reported explicitly because KeY's own saver returns its failures rather than throwing them:
+     * a caller that did not look would report a proof as saved that is not on disk anywhere.
+     */
+    SAVE_FAILED(-32011);
 
     private final int code;
 

@@ -4,18 +4,15 @@
 package org.key_project.server.api;
 
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import de.uka.ilkd.key.control.KeYEnvironment;
 import de.uka.ilkd.key.logic.op.IObserverFunction;
 import de.uka.ilkd.key.proof.Proof;
 import de.uka.ilkd.key.proof.init.ContractPO;
-import de.uka.ilkd.key.proof.io.AbstractProblemLoader;
 import de.uka.ilkd.key.proof.mgt.SpecificationRepository;
 import de.uka.ilkd.key.speclang.Contract;
 import de.uka.ilkd.key.speclang.DependencyContract;
@@ -28,19 +25,18 @@ import de.uka.ilkd.key.util.KeYTypeUtil;
 
 import org.key_project.server.ServerOptions;
 import org.key_project.server.ServerUserInterfaceControl;
-import org.key_project.server.dto.EnvironmentRef;
 import org.key_project.server.dto.Ok;
 import org.key_project.server.dto.ProofObligation;
 import org.key_project.server.dto.ProofObligationKind;
 import org.key_project.server.dto.RpcErrorData;
 import org.key_project.server.dto.TaskKind;
+import org.key_project.server.exec.ProjectLoader;
 import org.key_project.server.exec.TaskRunner;
 import org.key_project.server.registry.EnvironmentRegistry;
 import org.key_project.server.registry.LoadedEnvironment;
 import org.key_project.server.registry.ProofRegistry;
 import org.key_project.server.rpc.Concurrency;
 import org.key_project.server.rpc.JsonRpcDispatcher;
-import org.key_project.server.rpc.KeyErrors;
 import org.key_project.server.rpc.RpcErrorCode;
 import org.key_project.server.rpc.RpcException;
 import org.key_project.server.rpc.RpcMethod;
@@ -55,6 +51,7 @@ public final class EnvironmentMethods {
     private final EnvironmentRegistry environments;
     private final TaskRunner tasks;
     private final ProofRegistry proofs;
+    private final ProjectLoader loader;
 
     /**
      * Creates the handlers.
@@ -64,14 +61,17 @@ public final class EnvironmentMethods {
      * @param environments where loaded environments are kept
      * @param tasks used to run loading off the request thread
      * @param proofs where the proofs of an environment are kept
+     * @param loader brings a location in and registers what it produced
      */
     public EnvironmentMethods(ServerOptions options, ServerUserInterfaceControl control,
-            EnvironmentRegistry environments, TaskRunner tasks, ProofRegistry proofs) {
+            EnvironmentRegistry environments, TaskRunner tasks, ProofRegistry proofs,
+            ProjectLoader loader) {
         this.options = options;
         this.control = control;
         this.environments = environments;
         this.tasks = tasks;
         this.proofs = proofs;
+        this.loader = loader;
     }
 
     /**
@@ -104,28 +104,8 @@ public final class EnvironmentMethods {
                 : resolve(request.bootClassPath());
         List<Path> includes = resolveAll(request.includes());
 
-        return tasks.launch(TaskKind.LOAD, null, task -> {
-            AbstractProblemLoader loader;
-            try {
-                loader = control.load(null, file, classPath, bootClassPath, includes, null, false,
-                    null);
-            } catch (Exception e) {
-                throw new RpcException(RpcErrorCode.LOAD_FAILED, "Failed to load " + file,
-                    KeyErrors.describe(e), e);
-            }
-            control.drainWarnings();
-            KeYEnvironment<ServerUserInterfaceControl> environment =
-                new KeYEnvironment<>(control, loader.getInitConfig(), loader.getProof(),
-                    loader.getProofScript(), loader.getResult());
-            EnvironmentRef ref = environments.register(file, environment, loader.getProof());
-            Proof loadedProof = loader.getProof();
-            if (loadedProof != null) {
-                // A .proof file brings its own proof. Registering it keeps the proof count
-                // honest and makes it share the lifecycle of everything else in the environment.
-                proofs.register(ref.envId(), null, loadedProof);
-            }
-            return ref;
-        });
+        return tasks.launch(TaskKind.LOAD, null,
+            task -> loader.load(file, classPath, bootClassPath, includes));
     }
 
     private Object close(EnvironmentRequest request) {
@@ -244,23 +224,16 @@ public final class EnvironmentMethods {
     }
 
     /**
-     * Resolves a client-supplied path.
-     *
-     * <p>
-     * Relative paths are taken against the instance workspace. Absolute paths are honoured as
-     * given: the workspace anchors an instance, it does not confine it, and a client that can reach
-     * the loopback port can already read these files anyway.
+     * Resolves a client-supplied path against the workspace.
      *
      * @param raw the path as the client wrote it
      * @return the resolved absolute path
      */
     private Path resolve(String raw) {
         try {
-            Path path = Path.of(raw);
-            return (path.isAbsolute() ? path : options.workspace().resolve(path)).normalize();
-        } catch (InvalidPathException e) {
-            throw new RpcException(RpcErrorCode.INVALID_PARAMS, "Not a usable path: " + raw, null,
-                e);
+            return options.resolve(raw);
+        } catch (IllegalArgumentException e) {
+            throw new RpcException(RpcErrorCode.INVALID_PARAMS, e.getMessage(), null, e);
         }
     }
 

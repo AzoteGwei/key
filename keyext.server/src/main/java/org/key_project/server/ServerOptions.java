@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-2.0-only */
 package org.key_project.server;
 
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 
 /**
@@ -37,6 +38,27 @@ public record ServerOptions(int port, Path workspace, int idleTimeoutSeconds, in
             throw new IllegalArgumentException("threads must be at least 1, got " + threads);
         }
         workspace = workspace.toAbsolutePath().normalize();
+    }
+
+    /**
+     * Resolves a path a client supplied.
+     *
+     * <p>
+     * Relative paths are taken against the workspace. Absolute paths are honoured as given: the
+     * workspace anchors an instance, it does not confine it, and a client that can reach the
+     * loopback port can already read and write these files anyway.
+     *
+     * @param raw the path as the client wrote it
+     * @return the resolved absolute path
+     * @throws IllegalArgumentException when the text is not a usable path
+     */
+    public Path resolve(String raw) {
+        try {
+            Path path = Path.of(raw);
+            return (path.isAbsolute() ? path : workspace.resolve(path)).normalize();
+        } catch (InvalidPathException e) {
+            throw new IllegalArgumentException("Not a usable path: " + raw, e);
+        }
     }
 
     /** Whether this instance shuts itself down after a period without requests. */

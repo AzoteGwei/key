@@ -2,7 +2,7 @@
   "openrpc": "1.3.2",
   "info": {
     "title": "keyext.server",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "description": "A headless JSON-RPC interface to the KeY theorem prover, for automated agents.\n\nOne rule governs everything here: the only legitimate source of 'this is verified' is KeY's own Proof.closed(), reported as Statistics.closed. No error path, no timeout, no task reaching SUCCEEDED may be read as a closed proof. A task that finished is a task that finished.\n\nTransport: POST /rpc for calls, GET /rpc for a Server-Sent Events stream carrying task.progress and task.finished as JSON-RPC notifications. Bound to 127.0.0.1 only; there is no authentication, so reach a remote instance through an SSH tunnel.\n\nThird-party tool, not an official KeY component.",
     "license": {
       "name": "GPL-2.0-only",
@@ -215,7 +215,8 @@
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/TaskHandle"
-        }
+        },
+        "description": "Its result is an EnvironmentLoaded."
       },
       "errors": [
         {
@@ -1201,6 +1202,127 @@
         }
       ],
       "paramStructure": "by-name"
+    },
+    {
+      "name": "proof.save",
+      "summary": "Write a proof to disk in KeY's own format.",
+      "description": "Until a proof is written out it lives only as long as this server, which makes every result unreviewable: there is nothing to read, re-check or commit. The format is KeY's, so the file can be loaded by KeY itself and not only by this server.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "proof",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ProofRef"
+          }
+        },
+        {
+          "name": "path",
+          "required": false,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Relative paths are taken against the workspace. When omitted the proof is named after itself, in the workspace."
+        },
+        {
+          "name": "asBundle",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          },
+          "description": "Write a .zproof bundle carrying the sources, not a bare .proof."
+        }
+      ],
+      "result": {
+        "name": "saved",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/SavedProof"
+        }
+      },
+      "errors": [
+        {
+          "code": -32002,
+          "message": "PROOF_NOT_FOUND",
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "description": "The proof identifier is unknown or the proof was disposed of."
+        },
+        {
+          "code": -32011,
+          "message": "SAVE_FAILED",
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "description": "The proof was not written. KeY's saver reports its failures by returning them rather than throwing, so this code exists to make sure one is never mistaken for a path."
+        },
+        {
+          "code": -32602,
+          "message": "INVALID_PARAMS",
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "description": "The parameters did not fit this method."
+        },
+        {
+          "code": -32603,
+          "message": "INTERNAL_ERROR",
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "description": "The server hit an unexpected condition."
+        }
+      ]
+    },
+    {
+      "name": "proof.loadFile",
+      "summary": "Replay a saved proof into an environment of its own.",
+      "description": "The other half of proof.save. A file that replays only in part is refused rather than served: the resulting proof looks like any other from the outside, and the steps that are missing are exactly the ones that failed.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "task",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/TaskHandle"
+        },
+        "description": "Its result is an EnvironmentLoaded whose proof is always present."
+      },
+      "errors": [
+        {
+          "code": -32004,
+          "message": "LOAD_FAILED",
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "description": "The file could not be loaded, or was replayed only in part. data.positions carries what KeY knew."
+        },
+        {
+          "code": -32602,
+          "message": "INVALID_PARAMS",
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "description": "The parameters did not fit this method."
+        },
+        {
+          "code": -32603,
+          "message": "INTERNAL_ERROR",
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "description": "The server hit an unexpected condition."
+        }
+      ]
     }
   ],
   "components": {
@@ -1677,6 +1799,37 @@
           "keyVersion",
           "instanceId",
           "threads"
+        ]
+      },
+      "SavedProof": {
+        "type": "object",
+        "description": "Where a proof was written. That this object exists at all means the file is on disk: a save that did not happen is reported as an error, never as a path.",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "bytes"
+        ]
+      },
+      "EnvironmentLoaded": {
+        "type": "object",
+        "description": "What a finished LOAD or REPLAY task produced. A .proof or .zproof file brings a proof with it; the field is absent for a project or a problem file that declares none.",
+        "properties": {
+          "envId": {
+            "type": "string"
+          },
+          "proof": {
+            "$ref": "#/components/schemas/ProofRef"
+          }
+        },
+        "required": [
+          "envId"
         ]
       }
     }

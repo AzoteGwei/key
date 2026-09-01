@@ -17,6 +17,7 @@ import org.key_project.server.api.ProofMethods;
 import org.key_project.server.api.ServerMethods;
 import org.key_project.server.api.TaskMethods;
 import org.key_project.server.dto.TaskHandle;
+import org.key_project.server.exec.ProjectLoader;
 import org.key_project.server.exec.SerialExecutor;
 import org.key_project.server.exec.TaskRunner;
 import org.key_project.server.instance.IdleTimeout;
@@ -88,13 +89,15 @@ public final class KeyServerInstance implements AutoCloseable {
         });
         JsonRpcDispatcher dispatcher = new JsonRpcDispatcher(mapper, executor);
         TaskRunner runner = new TaskRunner(executor, tasks, control);
+        ProjectLoader loader = new ProjectLoader(control, environments, proofs);
 
         new ServerMethods(instanceId, options, tasks, mapper, this::close)
                 .registerOn(dispatcher);
         new TaskMethods(tasks).registerOn(dispatcher);
-        new EnvironmentMethods(options, control, environments, runner, proofs)
+        new EnvironmentMethods(options, control, environments, runner, proofs, loader)
                 .registerOn(dispatcher);
-        new ProofMethods(control, environments, proofs, runner).registerOn(dispatcher);
+        new ProofMethods(options, control, environments, proofs, runner, loader)
+                .registerOn(dispatcher);
         new GoalMethods(control, proofs, runner).registerOn(dispatcher);
         new DiagnosticsMethods(proofs, tasks).registerOn(dispatcher);
 
@@ -123,6 +126,15 @@ public final class KeyServerInstance implements AutoCloseable {
      */
     public String instanceId() {
         return instanceId;
+    }
+
+    /**
+     * The directory this instance is anchored to.
+     *
+     * @return the workspace path
+     */
+    public java.nio.file.Path workspace() {
+        return options.workspace();
     }
 
     /**
