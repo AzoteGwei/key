@@ -1388,6 +1388,70 @@
           "description": "The server hit an unexpected condition."
         }
       ]
+    },
+    {
+      "name": "proof.prune",
+      "summary": "Cut a proof back to a node, discarding everything below it.",
+      "description": "How to take back a wrong turn without starting the proof again from the contract. Refused when it would remove nothing, when the proof is closed (KeY's own default), and when a merge rule was applied below the node — undoing one of those reaches its partners on a thread this server does not control.",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "proof",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ProofRef"
+          }
+        },
+        {
+          "name": "nodeId",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          },
+          "description": "The node to cut back to, as reported by goal.list."
+        }
+      ],
+      "result": {
+        "name": "pruned",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/PrunedProof"
+        }
+      },
+      "errors": [
+        {
+          "code": -32002,
+          "message": "PROOF_NOT_FOUND",
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "description": "The proof identifier is unknown or the proof was disposed of."
+        },
+        {
+          "code": -32003,
+          "message": "GOAL_NOT_FOUND",
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "description": "The proof has no node with that number."
+        },
+        {
+          "code": -32602,
+          "message": "INVALID_PARAMS",
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "description": "The parameters did not fit, or there was nothing to prune at that node: it is already an open goal, it is closed and KeY declines to prune closed proofs, or a merge rule was applied below it."
+        },
+        {
+          "code": -32603,
+          "message": "INTERNAL_ERROR",
+          "data": {
+            "$ref": "#/components/schemas/ErrorData"
+          },
+          "description": "The server hit an unexpected condition."
+        }
+      ]
     }
   ],
   "components": {
@@ -2022,6 +2086,26 @@
           "goalId",
           "rules",
           "truncated"
+        ]
+      },
+      "PrunedProof": {
+        "type": "object",
+        "description": "What pruning removed. The count is reported because KeY answers \"nothing to do\" and \"done\" in ways that look alike from outside; a prune that would remove nothing is refused rather than reported here.",
+        "properties": {
+          "goal": {
+            "$ref": "#/components/schemas/GoalRef"
+          },
+          "removedNodes": {
+            "type": "integer"
+          },
+          "statistics": {
+            "$ref": "#/components/schemas/Statistics"
+          }
+        },
+        "required": [
+          "goal",
+          "removedNodes",
+          "statistics"
         ]
       }
     }

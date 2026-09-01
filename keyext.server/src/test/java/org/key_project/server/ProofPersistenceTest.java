@@ -198,6 +198,79 @@ class ProofPersistenceTest {
     }
 
     @Test
+    void pruningTakesBackAWrongTurnAndSaysWhatItUndid() throws Exception {
+        String proofId = prove("broken-max", "Max");
+        JsonNode before = client.result("proof.getStatistics", proof(proofId));
+        assertThat(before.get("closed").asBoolean()).isFalse();
+        int nodes = before.get("nodes").asInt();
+        assertThat(nodes).isGreaterThan(1);
+
+        // Back to the root: everything comes off and what is left is the obligation again.
+        JsonNode pruned = client.result("proof.prune",
+            "{\"proof\":{\"proofId\":\"" + proofId + "\"},\"nodeId\":0}");
+
+        assertThat(pruned.get("removedNodes").asInt()).isEqualTo(nodes - 1);
+        assertThat(pruned.get("statistics").get("nodes").asInt()).isOne();
+        assertThat(pruned.get("statistics").get("openGoals").asInt()).isOne();
+        assertThat(pruned.get("statistics").get("closed").asBoolean()).isFalse();
+        // The node it cut back to is an open goal again, and its identifier is handed over
+        // because every next step needs one.
+        assertThat(pruned.get("goal").get("goalId").asInt()).isZero();
+        assertThat(client.result("goal.list", proof(proofId)).get(0).get("goalId").asInt())
+                .isZero();
+
+        // And the proof can be worked on again from there, which is the point of undoing it.
+        awaitTask(client.result("proof.runAuto", proof(proofId)).get("taskId").asText());
+        assertThat(client.result("proof.getStatistics", proof(proofId)).get("nodes").asInt())
+                .isGreaterThan(1);
+    }
+
+    @Test
+    void aClosedProofIsNotPrunedAway() throws Exception {
+        String proofId = prove("max", "Max");
+        assertThat(client.result("proof.getStatistics", proof(proofId)).get("closed").asBoolean())
+                .isTrue();
+
+        JsonNode response = client.call("proof.prune",
+            "{\"proof\":{\"proofId\":\"" + proofId + "\"},\"nodeId\":0}");
+
+        // KeY declines to prune a closed proof unless told otherwise, which is a good default and
+        // a surprising one: the request looks like it worked from the outside. Refusing it out
+        // loud beats leaving a caller to wonder why nothing changed.
+        assertThat(response.get("error").get("code").asInt()).isEqualTo(-32602);
+        assertThat(client.result("proof.getStatistics", proof(proofId)).get("closed").asBoolean())
+                .isTrue();
+    }
+
+    @Test
+    void aPruneThatWouldRemoveNothingIsRefusedRatherThanReported() throws Exception {
+        String proofId = prove("broken-max", "Max");
+        int openGoal = client.result("goal.list", proof(proofId)).get(0).get("goalId").asInt();
+
+        // KeY answers "nothing to do" with a null rather than an empty list, so a caller that did
+        // not look would be told it had taken back a step it still has.
+        JsonNode response = client.call("proof.prune",
+            "{\"proof\":{\"proofId\":\"" + proofId + "\"},\"nodeId\":" + openGoal + "}");
+
+        assertThat(response.has("result")).isFalse();
+        assertThat(response.get("error").get("code").asInt()).isEqualTo(-32602);
+        assertThat(response.get("error").get("message").asText()).contains("Nothing to prune");
+    }
+
+    @Test
+    void rejectsNodesThatAreNotInThisProof() throws Exception {
+        String proofId = prove("max", "Max");
+
+        // KeY checks this with an assertion, which is off in any normal run and lets a foreign
+        // node corrupt the proof silently. So it is checked here instead.
+        assertThat(client.errorCode("proof.prune",
+            "{\"proof\":{\"proofId\":\"" + proofId + "\"},\"nodeId\":999999}"))
+                .isEqualTo(-32003);
+        assertThat(client.errorCode("proof.prune",
+            "{\"proof\":{\"proofId\":\"prf-deadbeef\"},\"nodeId\":0}")).isEqualTo(-32002);
+    }
+
+    @Test
     void rejectsProofsAndPathsItCannotUse() throws Exception {
         String proofId = prove("max", "Max");
 

@@ -6,12 +6,15 @@ package org.key_project.server.api;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Iterator;
 import java.util.List;
 
 import de.uka.ilkd.key.proof.Goal;
+import de.uka.ilkd.key.proof.Node;
 import de.uka.ilkd.key.proof.Proof;
 import de.uka.ilkd.key.proof.io.ProofBundleSaver;
 import de.uka.ilkd.key.proof.io.ProofSaver;
+import de.uka.ilkd.key.rule.merge.MergeRuleBuiltInRuleApp;
 import de.uka.ilkd.key.speclang.Contract;
 import de.uka.ilkd.key.util.MiscTools;
 import de.uka.ilkd.key.util.ProofStarter;
@@ -24,8 +27,10 @@ import org.key_project.server.dto.AutoModeOutcome;
 import org.key_project.server.dto.AutoModeOutcomes;
 import org.key_project.server.dto.AutoModeResult;
 import org.key_project.server.dto.EnvironmentLoaded;
+import org.key_project.server.dto.GoalRef;
 import org.key_project.server.dto.Ok;
 import org.key_project.server.dto.ProofRef;
+import org.key_project.server.dto.PrunedProof;
 import org.key_project.server.dto.RpcErrorData;
 import org.key_project.server.dto.SavedProof;
 import org.key_project.server.dto.TaskKind;
@@ -42,6 +47,7 @@ import org.key_project.server.rpc.KeyErrors;
 import org.key_project.server.rpc.RpcErrorCode;
 import org.key_project.server.rpc.RpcException;
 import org.key_project.server.rpc.RpcMethod;
+import org.key_project.util.collection.ImmutableList;
 
 /** The {@code proof.*} methods: starting proofs, running the search and reading the result. */
 public final class ProofMethods {
@@ -94,6 +100,8 @@ public final class ProofMethods {
         // rewritten underneath it.
         dispatcher.register(new RpcMethod("proof.save", Concurrency.SERIAL,
             params -> save(params.as(SaveProofRequest.class))));
+        dispatcher.register(new RpcMethod("proof.prune", Concurrency.SERIAL,
+            params -> prune(params.as(PruneRequest.class))));
         // Replaying a saved proof takes as long as the proof did, so this only queues.
         dispatcher.register(new RpcMethod("proof.loadFile", Concurrency.INLINE,
             params -> loadFile(params.as(LoadProofRequest.class))));
@@ -163,6 +171,91 @@ public final class ProofMethods {
     private Object close(ProofRequest request) {
         proofs.close(request.proof().proofId());
         return new Ok(true);
+    }
+
+    /**
+     * Cuts a proof back to a node, discarding everything below it.
+     *
+     * <p>
+     * How an agent takes back a wrong turn. Without it a proof that went the wrong way has to be
+     * started again from the contract, which throws away the part that was going well along with
+     * the part that was not.
+     *
+     * @param request which proof, and which node
+     * @return what was removed and where the proof now stands
+     */
+    private Object prune(PruneRequest request) {
+        RegisteredProof registered = proofs.require(request.proof().proofId());
+        Proof proof = registered.proof();
+        Node node = find(proof, request.nodeId());
+        refuseMergedSubtree(node);
+
+        int before = proof.countNodes();
+        // KeY checks that the node belongs to the proof with an assertion, which is disabled in
+        // any normal run, and silently corrupts the proof if it does not. find() above resolves
+        // the node from this proof, so it cannot be foreign here.
+        ImmutableList<Node> removed = proof.pruneProof(node);
+        if (removed == null) {
+            // Not an empty list: null. Reporting success for a prune that did nothing would tell
+            // a caller it had taken back a step it still has.
+            throw new RpcException(RpcErrorCode.INVALID_PARAMS, "Nothing to prune at node "
+                + request.nodeId() + ": it is either already an open goal, or it is closed and "
+                + "this build refuses to prune closed proofs");
+        }
+
+        Goal reopened = proof.getOpenGoal(node);
+        if (reopened == null) {
+            throw new RpcException(RpcErrorCode.INTERNAL_ERROR,
+                "Node " + request.nodeId() + " was pruned but is not an open goal");
+        }
+        return new PrunedProof(new GoalRef(registered.proofId(), reopened.node().serialNr()),
+            before - proof.countNodes(), ProofFacts.describe(proof));
+    }
+
+    /**
+     * Refuses to prune a part of the proof that a merge rule reaches into.
+     *
+     * <p>
+     * Undoing a merge means undoing its partners too, and KeY does that through
+     * {@code SwingUtilities.invokeLater} — on the event dispatch thread, which in this server is
+     * not the thread that owns proof state and is not waited for. The proof would be modified
+     * from two threads and the answer returned before the second had finished. Saying no is the
+     * only honest option until that path has somewhere safe to run.
+     *
+     * @param node the node about to be pruned
+     * @throws RpcException with {@link RpcErrorCode#INVALID_PARAMS} when a merge is involved
+     */
+    private static void refuseMergedSubtree(Node node) {
+        Iterator<Node> subtree = node.subtreeIterator();
+        while (subtree.hasNext()) {
+            if (subtree.next().getAppliedRuleApp() instanceof MergeRuleBuiltInRuleApp) {
+                throw new RpcException(RpcErrorCode.INVALID_PARAMS,
+                    "Refusing to prune below node " + node.serialNr() + ": a merge rule was "
+                        + "applied there, and undoing one reaches its partners on a thread this "
+                        + "server does not control");
+            }
+        }
+    }
+
+    /**
+     * Resolves a node of a proof by its serial number.
+     *
+     * @param proof the proof to look in
+     * @param nodeId the serial number to find
+     * @return the node
+     * @throws RpcException with {@link RpcErrorCode#GOAL_NOT_FOUND} when the proof has no such
+     *         node
+     */
+    private static Node find(Proof proof, int nodeId) {
+        Iterator<Node> nodes = proof.root().subtreeIterator();
+        while (nodes.hasNext()) {
+            Node node = nodes.next();
+            if (node.serialNr() == nodeId) {
+                return node;
+            }
+        }
+        throw new RpcException(RpcErrorCode.GOAL_NOT_FOUND,
+            "Proof has no node " + nodeId + "; node numbers come from goal.list");
     }
 
     /**
