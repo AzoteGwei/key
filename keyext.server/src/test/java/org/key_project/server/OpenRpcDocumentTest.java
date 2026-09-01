@@ -107,6 +107,83 @@ class OpenRpcDocumentTest {
     }
 
     @Test
+    void everyMethodIsFiledUnderATagThatIsActuallyDefined() throws Exception {
+        JsonNode document = client.result("server.describe", null);
+        JsonNode defined = document.get("components").get("tags");
+
+        for (JsonNode method : document.get("methods")) {
+            String name = method.get("name").asText();
+            JsonNode tags = method.path("tags");
+            assertThat(tags).describedAs("%s is filed under no tag", name).isNotEmpty();
+            for (JsonNode tag : tags) {
+                // Written as references so the prose describing a namespace lives in one place.
+                // A reference to a tag that was never defined is a dangling pointer in a document
+                // whose whole job is to be resolvable.
+                String ref = tag.path("$ref").asText();
+                assertThat(ref).describedAs("%s should reference a tag", name)
+                        .startsWith("#/components/tags/");
+                String target = ref.substring("#/components/tags/".length());
+                assertThat(defined.has(target))
+                        .describedAs("%s references tag %s, which is not defined", name, target)
+                        .isTrue();
+            }
+        }
+    }
+
+    @Test
+    void everyMethodShowsACallAndOnlyNamesParametersItHas() throws Exception {
+        JsonNode document = client.result("server.describe", null);
+
+        for (JsonNode method : document.get("methods")) {
+            String name = method.get("name").asText();
+            JsonNode examples = method.path("examples");
+            assertThat(examples).describedAs("%s has no example", name).isNotEmpty();
+
+            Set<String> declared = new TreeSet<>();
+            for (JsonNode param : method.path("params")) {
+                declared.add(param.get("name").asText());
+            }
+            for (JsonNode pairing : examples) {
+                for (JsonNode example : pairing.path("params")) {
+                    // The example is what a reader copies, so a name that drifted out of the
+                    // signature is worse than no example: it is a call that cannot work, shown
+                    // as one that does.
+                    assertThat(declared).describedAs("%s shows a parameter it does not take", name)
+                            .contains(example.get("name").asText());
+                }
+            }
+        }
+    }
+
+    @Test
+    void everythingAClientHasToSupplyOrReadIsExplained() throws Exception {
+        JsonNode document = client.result("server.describe", null);
+
+        for (JsonNode method : document.get("methods")) {
+            String name = method.get("name").asText();
+            for (JsonNode param : method.path("params")) {
+                assertThat(param.path("description").asText())
+                        .describedAs("%s(%s) is undescribed", name, param.get("name").asText())
+                        .isNotBlank();
+            }
+            assertThat(method.path("result").path("description").asText())
+                    .describedAs("the result of %s is undescribed", name).isNotBlank();
+        }
+
+        JsonNode schemas = document.get("components").get("schemas");
+        schemas.fieldNames().forEachRemaining(schema -> {
+            assertThat(schemas.get(schema).path("description").asText())
+                    .describedAs("schema %s is undescribed", schema).isNotBlank();
+            JsonNode properties = schemas.get(schema).path("properties");
+            properties.fieldNames().forEachRemaining(property ->
+            // A shape a caller reads off the wire is where a guess turns into a bug quietly:
+            // openGoals and nodes are both plausible names for either number.
+            assertThat(properties.get(property).path("description").asText())
+                    .describedAs("%s.%s is undescribed", schema, property).isNotBlank());
+        });
+    }
+
+    @Test
     void theDocumentWarnsThatAFinishedTaskIsNotAClosedProof() throws Exception {
         JsonNode document = client.result("server.describe", null);
         String text = document.toString();

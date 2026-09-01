@@ -1,9 +1,14 @@
 {
+  "$schema": "https://meta.open-rpc.org/",
   "openrpc": "1.3.2",
   "info": {
     "title": "keyext.server",
     "version": "1.1.0",
     "description": "A headless JSON-RPC interface to the KeY theorem prover, for automated agents.\n\nOne rule governs everything here: the only legitimate source of 'this is verified' is KeY's own Proof.closed(), reported as Statistics.closed. No error path, no timeout, no task reaching SUCCEEDED may be read as a closed proof. A task that finished is a task that finished.\n\nTransport: POST /rpc for calls, GET /rpc for a Server-Sent Events stream carrying task.progress and task.finished as JSON-RPC notifications. Bound to 127.0.0.1 only; there is no authentication, so reach a remote instance through an SSH tunnel.\n\nThird-party tool, not an official KeY component.",
+    "contact": {
+      "name": "KeY project",
+      "url": "https://key-project.org"
+    },
     "license": {
       "name": "GPL-2.0-only",
       "url": "https://spdx.org/licenses/GPL-2.0-only.html"
@@ -25,9 +30,16 @@
     {
       "name": "server.version",
       "summary": "Who this server is and what it speaks.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/server"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [],
       "result": {
         "name": "version",
+        "description": "What this instance is: the protocol version clients should check, the KeY version underneath it, and the identity of the process.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/ServerVersion"
@@ -36,29 +48,49 @@
       "errors": [
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "checking what is on the other end",
+          "description": "A client's first call. Compare apiVersion against the version it was built for.",
+          "params": [],
+          "result": {
+            "name": "version",
+            "value": {
+              "apiVersion": "1.1.0",
+              "keyVersion": "3.1.0-dev (internal: 6ff141b217c5dee4fe0200f24ef06cdb3028727e)",
+              "instanceId": "inst-36up600s",
+              "threads": 1
+            }
+          }
+        }
+      ]
     },
     {
       "name": "server.health",
       "summary": "Whether the server answers.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/server"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [],
       "result": {
         "name": "health",
+        "description": "Whether the instance is answering.",
         "required": true,
         "schema": {
           "type": "object",
@@ -72,29 +104,45 @@
       "errors": [
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "a liveness check",
+          "params": [],
+          "result": {
+            "name": "health",
+            "value": {
+              "ok": true
+            }
+          }
+        }
+      ]
     },
     {
       "name": "server.describe",
       "summary": "This document, served by the build you are talking to.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/server"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [],
       "result": {
         "name": "openrpc",
+        "description": "This document.",
         "required": true,
         "schema": {
           "type": "object"
@@ -103,27 +151,55 @@
       "errors": [
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "fetching the protocol",
+          "description": "The answer is this whole document; only its first fields are shown here.",
+          "params": [],
+          "result": {
+            "name": "openrpc",
+            "value": {
+              "openrpc": "1.3.2",
+              "info": {
+                "title": "KeY server",
+                "version": "1.1.0"
+              },
+              "methods": [
+                "… one entry per method …"
+              ],
+              "components": {
+                "schemas": {
+                  "…": "…"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     {
       "name": "server.shutdown",
       "summary": "Stop this instance.",
       "description": "Refused while work is in progress unless forced: a client that started a search and then asked to stop has probably lost track of one of the two.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/server"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "force",
@@ -136,6 +212,7 @@
       ],
       "result": {
         "name": "ok",
+        "description": "Acknowledgement that the instance is stopping. The answer is sent before the listener closes.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/Ok"
@@ -144,35 +221,55 @@
       "errors": [
         {
           "code": -32007,
-          "message": "TASK_CONFLICT",
+          "message": "TASK_CONFLICT — something is already working on this subject",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "Something is already working on this subject."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "stopping an instance that has work in flight",
+          "description": "Without force the instance refuses while tasks are running.",
+          "params": [
+            {
+              "name": "force",
+              "value": true
+            }
+          ],
+          "result": {
+            "name": "ok",
+            "value": {
+              "ok": true
+            }
+          }
+        }
+      ]
     },
     {
       "name": "environment.load",
       "summary": "Load a project, a .key file or a .proof file.",
       "description": "Returns at once. Loading a real project takes far longer than a request should, so the work runs as a task whose result is an EnvironmentRef.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/environment"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "path",
@@ -184,6 +281,7 @@
         },
         {
           "name": "classpath",
+          "description": "Directories and jars to resolve referenced classes against, as javac's -classpath would.",
           "required": false,
           "schema": {
             "type": "array",
@@ -194,6 +292,7 @@
         },
         {
           "name": "bootClassPath",
+          "description": "A directory of stub classes to use instead of KeY's bundled model of the JDK.",
           "required": false,
           "schema": {
             "type": "string"
@@ -201,6 +300,7 @@
         },
         {
           "name": "includes",
+          "description": "Extra .key files to read declarations, rules or contracts from.",
           "required": false,
           "schema": {
             "type": "array",
@@ -216,42 +316,65 @@
         "schema": {
           "$ref": "#/components/schemas/TaskHandle"
         },
-        "description": "Its result is an EnvironmentLoaded."
+        "description": "A handle on the task doing the loading. Parsing and type-checking a project takes time, so this returns before any of it has happened; poll task.get, and the environment identifier is in the task's result once it has SUCCEEDED."
       },
       "errors": [
         {
           "code": -32004,
-          "message": "LOAD_FAILED",
+          "message": "LOAD_FAILED — the project or file could not be loaded. data.positions carries what KeY knew",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The project or file could not be loaded. data.positions carries what KeY knew."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "loading a single Java file",
+          "description": "The environment is not ready when this returns. Poll task.get for taskId task-30am7bj2; its result carries the envId.",
+          "params": [
+            {
+              "name": "path",
+              "value": "Adder.java"
+            }
+          ],
+          "result": {
+            "name": "task",
+            "value": {
+              "taskId": "task-30am7bj2",
+              "kind": "LOAD",
+              "status": "PENDING"
+            }
+          }
+        }
+      ]
     },
     {
       "name": "environment.list",
       "summary": "Every project this server has loaded.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/environment"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [],
       "result": {
         "name": "environments",
+        "description": "Every environment currently loaded in this instance.",
         "required": true,
         "schema": {
           "type": "array",
@@ -263,30 +386,50 @@
       "errors": [
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "seeing what is loaded",
+          "params": [],
+          "result": {
+            "name": "environments",
+            "value": [
+              {
+                "envId": "env-yihz4thv",
+                "path": "/home/alice/adder/Adder.java",
+                "proofCount": 1
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "environment.listProofObligations",
       "summary": "What can be proved in a project.",
       "description": "The JDK stub specifications KeY loads alongside a project run to several hundred entries and bury the project's own contracts, so they are left out unless asked for. Nothing is hidden silently.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/environment"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "env",
+          "description": "The environment to enumerate.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/EnvironmentRef"
@@ -294,6 +437,7 @@
         },
         {
           "name": "targetClass",
+          "description": "Restrict the result to obligations on this class, given as its fully qualified name.",
           "required": false,
           "schema": {
             "type": "string"
@@ -301,6 +445,7 @@
         },
         {
           "name": "includeLibraryClasses",
+          "description": "Also enumerate obligations on classes KeY treats as library code, chiefly the JDK. Off by default: turning it on typically returns hundreds of obligations nobody asked about.",
           "required": false,
           "schema": {
             "type": "boolean"
@@ -309,6 +454,7 @@
       ],
       "result": {
         "name": "obligations",
+        "description": "The proof obligations KeY derives from the specifications in this environment. Each contractId is what proof.start takes.",
         "required": true,
         "schema": {
           "type": "array",
@@ -320,37 +466,66 @@
       "errors": [
         {
           "code": -32001,
-          "message": "ENV_NOT_FOUND",
+          "message": "ENV_NOT_FOUND — the environment identifier is unknown or the environment was closed",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The environment identifier is unknown or the environment was closed."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "finding what can be proved",
+          "description": "contractId is passed to proof.start exactly as it appears here, spaces and all.",
+          "params": [
+            {
+              "name": "env",
+              "value": {
+                "envId": "env-au0bh18m"
+              }
+            }
+          ],
+          "result": {
+            "name": "obligations",
+            "value": [
+              {
+                "contractId": "Adder[Adder::add(int,int)].JML normal_behavior operation contract.0",
+                "kind": "FUNCTIONAL_OPERATION",
+                "targetClass": "Adder",
+                "targetMember": "add(int, int)",
+                "hasExistingProof": false
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "environment.close",
       "summary": "Release a project and every proof belonging to it.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/environment"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "env",
+          "description": "The environment to dispose of, along with every proof still open under it.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/EnvironmentRef"
@@ -359,6 +534,7 @@
       ],
       "result": {
         "name": "ok",
+        "description": "Acknowledgement that the environment and its proofs are gone.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/Ok"
@@ -367,37 +543,59 @@
       "errors": [
         {
           "code": -32001,
-          "message": "ENV_NOT_FOUND",
+          "message": "ENV_NOT_FOUND — the environment identifier is unknown or the environment was closed",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The environment identifier is unknown or the environment was closed."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "releasing an environment",
+          "params": [
+            {
+              "name": "env",
+              "value": {
+                "envId": "env-au0bh18m"
+              }
+            }
+          ],
+          "result": {
+            "name": "ok",
+            "value": {
+              "ok": true
+            }
+          }
+        }
+      ]
     },
     {
       "name": "proof.start",
       "summary": "Create a proof for one contract.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/proof"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "env",
+          "description": "The environment the contract was listed from.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/EnvironmentRef"
@@ -405,6 +603,7 @@
         },
         {
           "name": "contractId",
+          "description": "The contractId of a proof obligation, exactly as environment.listProofObligations reported it.",
           "required": true,
           "schema": {
             "type": "string"
@@ -413,6 +612,7 @@
       ],
       "result": {
         "name": "proof",
+        "description": "A handle on the new proof attempt. Nothing has been proved yet; the proof starts open at its initial goal.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/ProofRef"
@@ -421,38 +621,65 @@
       "errors": [
         {
           "code": -32001,
-          "message": "ENV_NOT_FOUND",
+          "message": "ENV_NOT_FOUND — the environment identifier is unknown or the environment was closed",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The environment identifier is unknown or the environment was closed."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "opening a proof for a contract",
+          "description": "The proof exists and is open. Nothing has been proved.",
+          "params": [
+            {
+              "name": "env",
+              "value": {
+                "envId": "env-au0bh18m"
+              }
+            },
+            {
+              "name": "contractId",
+              "value": "Adder[Adder::add(int,int)].JML normal_behavior operation contract.0"
+            }
+          ],
+          "result": {
+            "name": "proof",
+            "value": {
+              "proofId": "prf-mti96bu2"
+            }
+          }
+        }
+      ]
     },
     {
       "name": "proof.runAuto",
       "summary": "Run the automatic proof search.",
       "description": "Returns at once; the search runs as a task. timeoutMs is a wall-clock budget enforced by interrupting the search, the same mechanism task.cancel uses.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/proof"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "proof",
+          "description": "The proof to run the search on.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/ProofRef"
@@ -460,6 +687,7 @@
         },
         {
           "name": "timeoutMs",
+          "description": "Wall-clock budget in milliseconds. When it runs out the search is interrupted and the task still succeeds, reporting outcome BUDGET_ELAPSED; whatever the search had achieved by then is kept.",
           "required": false,
           "schema": {
             "type": "integer"
@@ -468,6 +696,7 @@
       ],
       "result": {
         "name": "task",
+        "description": "A handle on the task running the search. The search has not finished when this returns; poll task.get for it.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/TaskHandle"
@@ -476,45 +705,76 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32007,
-          "message": "TASK_CONFLICT",
+          "message": "TASK_CONFLICT — something is already working on this subject",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "Something is already working on this subject."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "running the search with a one-minute budget",
+          "description": "Returns immediately with a PENDING task. What the search achieved is in the task's result, and whether the contract holds is the closed field of the statistics there.",
+          "params": [
+            {
+              "name": "proof",
+              "value": {
+                "proofId": "prf-mti96bu2"
+              }
+            },
+            {
+              "name": "timeoutMs",
+              "value": 60000
+            }
+          ],
+          "result": {
+            "name": "task",
+            "value": {
+              "taskId": "task-vtarwnwt",
+              "kind": "AUTO",
+              "status": "PENDING",
+              "subject": {
+                "proofId": "prf-mti96bu2"
+              }
+            }
+          }
+        }
+      ]
     },
     {
       "name": "proof.getStatistics",
       "summary": "Whether a proof is closed, and what it took.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/proof"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "proof",
+          "description": "The proof to report on.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/ProofRef"
@@ -523,6 +783,7 @@
       ],
       "result": {
         "name": "statistics",
+        "description": "What the proof has achieved, including whether it is closed.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/Statistics"
@@ -531,37 +792,72 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "asking whether the contract is proved",
+          "description": "closed is true, so this contract holds. It is the only field that says so.",
+          "params": [
+            {
+              "name": "proof",
+              "value": {
+                "proofId": "prf-mti96bu2"
+              }
+            }
+          ],
+          "result": {
+            "name": "statistics",
+            "value": {
+              "closed": true,
+              "openGoals": 0,
+              "nodes": 29,
+              "branches": 1,
+              "totalRuleApps": 81,
+              "interactiveSteps": 0,
+              "symbExApps": 11,
+              "smtSolverApps": 0,
+              "loopInvApps": 0,
+              "operationContractApps": 0,
+              "dependencyContractApps": 0,
+              "blockLoopContractApps": 0,
+              "autoModeTimeMs": 102
+            }
+          }
+        }
+      ]
     },
     {
       "name": "proof.close",
       "summary": "Release a proof.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/proof"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "proof",
+          "description": "The proof to dispose of. Its environment stays loaded and other proofs under it are unaffected.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/ProofRef"
@@ -570,6 +866,7 @@
       ],
       "result": {
         "name": "ok",
+        "description": "Acknowledgement that the proof has been disposed of.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/Ok"
@@ -578,37 +875,59 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "disposing of a proof",
+          "params": [
+            {
+              "name": "proof",
+              "value": {
+                "proofId": "prf-mti96bu2"
+              }
+            }
+          ],
+          "result": {
+            "name": "ok",
+            "value": {
+              "ok": true
+            }
+          }
+        }
+      ]
     },
     {
       "name": "goal.list",
       "summary": "The goals of a proof.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/goal"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "proof",
+          "description": "The proof whose goals to list.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/ProofRef"
@@ -616,6 +935,7 @@
         },
         {
           "name": "includeClosed",
+          "description": "Also list goals that are already closed. Off by default, since only open goals can be worked on.",
           "required": false,
           "schema": {
             "type": "boolean"
@@ -624,6 +944,7 @@
       ],
       "result": {
         "name": "goals",
+        "description": "The goals of the proof, each with the node it sits at.",
         "required": true,
         "schema": {
           "type": "array",
@@ -635,37 +956,70 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "finding what still needs work",
+          "description": "A proof that has just started has one open goal at node 0.",
+          "params": [
+            {
+              "name": "proof",
+              "value": {
+                "proofId": "prf-mti96bu2"
+              }
+            }
+          ],
+          "result": {
+            "name": "goals",
+            "value": [
+              {
+                "goal": {
+                  "proofId": "prf-mti96bu2",
+                  "goalId": 0
+                },
+                "goalId": 0,
+                "nodeId": 0,
+                "isOpen": true,
+                "isLinked": false
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "goal.getSequent",
       "summary": "The formulas of one goal.",
+      "description": "All three declared formats are implemented. STRUCTURED additionally reports each formula split into its symbolic state, the program still to run, and what must hold once it has.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/goal"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "goal",
+          "description": "The goal whose sequent to render.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/GoalRef"
@@ -673,6 +1027,7 @@
         },
         {
           "name": "format",
+          "description": "How to render it. TEXT is KeY's plain notation, UNICODE the same with logical symbols, and STRUCTURED additionally splits each formula into its symbolic state, the program still to execute, and what is claimed to hold afterwards.",
           "required": false,
           "schema": {
             "$ref": "#/components/schemas/SequentFormat"
@@ -681,6 +1036,7 @@
       ],
       "result": {
         "name": "sequent",
+        "description": "The sequent of that goal, rendered in the requested format.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/Sequent"
@@ -689,46 +1045,86 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32003,
-          "message": "GOAL_NOT_FOUND",
+          "message": "GOAL_NOT_FOUND — no such open goal. Goals close and are replaced as a proof grows; list them again",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "No such open goal. Goals close and are replaced as a proof grows; list them again."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name",
-      "description": "All three declared formats are implemented. STRUCTURED additionally reports each formula split into its symbolic state, the program still to run, and what must hold once it has."
+      "examples": [
+        {
+          "name": "reading a goal",
+          "description": "STRUCTURED additionally splits the formula into the symbolic state, the program still to execute, and what must hold afterwards. Long strings are elided here.",
+          "params": [
+            {
+              "name": "goal",
+              "value": {
+                "proofId": "prf-mti96bu2",
+                "goalId": 0
+              }
+            },
+            {
+              "name": "format",
+              "value": "STRUCTURED"
+            }
+          ],
+          "result": {
+            "name": "sequent",
+            "value": {
+              "antecedent": [],
+              "succedent": [
+                "wellFormed(heap) & (inInt(a) & inInt(b)) & measuredByEmpty & (( (0 <= a & a <= 1000)<<SC>> & ((0 <= b & b <= 1000)<<SC>> …"
+              ],
+              "format": "STRUCTURED",
+              "formulas": [
+                {
+                  "side": "SUCCEDENT",
+                  "index": 0,
+                  "text": "wellFormed(heap) & (inInt(a) & inInt(b)) & measuredByEmpty & …",
+                  "state": "{heapAtPre:=heap || _a:=a || _b:=b}",
+                  "program": "{ exc = null; try { result_add = Adder.add(_a, _b)@Adder; } catch (java.lang.Throwable e) { exc = e; } }",
+                  "claim": "result_add = a + b & (exc = null) & …"
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     {
       "name": "goal.listAvailableMacros",
       "summary": "The macros this server can run.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/goal"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "proof",
+          "description": "The proof to report macros for. The list is the same for every proof in an instance; the parameter exists so a caller can ask without holding a goal.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/ProofRef"
@@ -737,6 +1133,7 @@
       ],
       "result": {
         "name": "macros",
+        "description": "The proof macros this instance can run.",
         "required": true,
         "schema": {
           "type": "array",
@@ -748,38 +1145,72 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "seeing what can be run at a goal",
+          "description": "Abridged; an instance offers rather more than this.",
+          "params": [
+            {
+              "name": "proof",
+              "value": {
+                "proofId": "prf-mti96bu2"
+              }
+            }
+          ],
+          "result": {
+            "name": "macros",
+            "value": [
+              {
+                "macroId": "auto",
+                "name": "Full Automation",
+                "category": "Auto Pilot",
+                "description": "<html>Runs the full proof strategy on the selected subtree.<br>The strategy can be configured in 'Proof Search Strategy' tab."
+              },
+              {
+                "macroId": "auto-macro",
+                "name": "Flexible Scripting Automation Macro",
+                "category": null,
+                "description": "Macro with multiple options for flexible automation. Default works as FinishSymbolicExecutionMacro."
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "goal.applyMacro",
       "summary": "Run a macro on a proof or one of its goals.",
       "description": "Returns at once; the macro runs as a task whose result is a ProofRunResult.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/goal"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "proof",
+          "description": "The proof to apply the macro to.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/ProofRef"
@@ -787,6 +1218,7 @@
         },
         {
           "name": "macroId",
+          "description": "The macroId of a macro, as goal.listAvailableMacros reported it.",
           "required": true,
           "schema": {
             "type": "string"
@@ -794,6 +1226,7 @@
         },
         {
           "name": "goal",
+          "description": "Apply the macro to this goal alone. When left out it is applied to every open goal of the proof.",
           "required": false,
           "schema": {
             "$ref": "#/components/schemas/GoalRef"
@@ -802,6 +1235,7 @@
       ],
       "result": {
         "name": "task",
+        "description": "A handle on the task running the macro. Poll task.get for the outcome.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/TaskHandle"
@@ -810,54 +1244,84 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32003,
-          "message": "GOAL_NOT_FOUND",
+          "message": "GOAL_NOT_FOUND — no such open goal. Goals close and are replaced as a proof grows; list them again",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "No such open goal. Goals close and are replaced as a proof grows; list them again."
+          }
         },
         {
           "code": -32007,
-          "message": "TASK_CONFLICT",
+          "message": "TASK_CONFLICT — something is already working on this subject",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "Something is already working on this subject."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "running a macro over every open goal",
+          "description": "Leave goal out to apply it to all of them.",
+          "params": [
+            {
+              "name": "proof",
+              "value": {
+                "proofId": "prf-l1evdrli"
+              }
+            },
+            {
+              "name": "macroId",
+              "value": "autopilot-prep"
+            }
+          ],
+          "result": {
+            "name": "task",
+            "value": {
+              "taskId": "task-ab71bdql",
+              "kind": "MACRO",
+              "status": "PENDING",
+              "subject": {
+                "proofId": "prf-l1evdrli"
+              }
+            }
+          }
+        }
+      ]
     },
     {
       "name": "goal.applyScript",
       "summary": "Run a proof script from one goal.",
       "description": "Preferred over goal.applyMacro: a script is reproducible, can be saved next to the code it proves, and its meaning is KeY's. It does not parse, it is refused before any task is created.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/goal"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "goal",
+          "description": "The goal the script starts at.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/GoalRef"
@@ -865,6 +1329,7 @@
         },
         {
           "name": "script",
+          "description": "One or more KeY proof script commands, separated by semicolons, for example 'rule \"andRight\"; auto;'. The commands and their arguments are KeY's own; diagnostics.listApplicableRules emits lines in this syntax.",
           "required": true,
           "schema": {
             "type": "string"
@@ -873,6 +1338,7 @@
       ],
       "result": {
         "name": "task",
+        "description": "A handle on the task running the script. Poll task.get for the outcome.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/TaskHandle"
@@ -881,61 +1347,91 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32003,
-          "message": "GOAL_NOT_FOUND",
+          "message": "GOAL_NOT_FOUND — no such open goal. Goals close and are replaced as a proof grows; list them again",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "No such open goal. Goals close and are replaced as a proof grows; list them again."
+          }
         },
         {
           "code": -32005,
-          "message": "SCRIPT_ERROR",
+          "message": "SCRIPT_ERROR — the script did not parse or did not run. data.positions carries where",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The script did not parse or did not run. data.positions carries where."
+          }
         },
         {
           "code": -32007,
-          "message": "TASK_CONFLICT",
+          "message": "TASK_CONFLICT — something is already working on this subject",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "Something is already working on this subject."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "driving one goal by hand",
+          "description": "Commands are KeY's own proof script syntax; diagnostics.listApplicableRules emits lines in it.",
+          "params": [
+            {
+              "name": "goal",
+              "value": {
+                "proofId": "prf-l1evdrli",
+                "goalId": 28
+              }
+            },
+            {
+              "name": "script",
+              "value": "auto;"
+            }
+          ],
+          "result": {
+            "name": "task",
+            "value": {
+              "taskId": "task-zdkzgzpy",
+              "kind": "SCRIPT",
+              "status": "PENDING",
+              "subject": {
+                "proofId": "prf-l1evdrli"
+              }
+            }
+          }
+        }
+      ]
     },
     {
       "name": "diagnostics.explainGoal",
       "summary": "Why one goal is not closing.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/diagnostics"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "goal",
+          "description": "The goal to examine.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/GoalRef"
@@ -952,6 +1448,7 @@
       ],
       "result": {
         "name": "diagnostics",
+        "description": "Where the automatic search stopped in this goal, and why.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/GoalDiagnostics"
@@ -960,54 +1457,78 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32003,
-          "message": "GOAL_NOT_FOUND",
+          "message": "GOAL_NOT_FOUND — no such open goal. Goals close and are replaced as a proof grows; list them again",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "No such open goal. Goals close and are replaced as a proof grows; list them again."
+          }
         },
         {
           "code": -32007,
-          "message": "TASK_CONFLICT",
+          "message": "TASK_CONFLICT — something is already working on this subject",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "Something is already working on this subject."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "asking why one goal is stuck",
+          "description": "An empty stuckPoints does not mean the goal is fine; read it together with lastSearchOutcome.",
+          "params": [
+            {
+              "name": "goal",
+              "value": {
+                "proofId": "prf-mti96bu2",
+                "goalId": 0
+              }
+            }
+          ],
+          "result": {
+            "name": "diagnostics",
+            "value": {
+              "goalId": 0,
+              "stuckPoints": [],
+              "truncated": false
+            }
+          }
+        }
+      ]
     },
     {
       "name": "diagnostics.listStuckPoints",
       "summary": "Why each open goal of a proof is not closing.",
       "description": "Refused while a task is working on the proof: the probe builds rule applications against live goal state, and an answer computed from a proof mid-rewrite would be worse than none.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/diagnostics"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "proof",
+          "description": "The proof whose open goals to examine.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/ProofRef"
@@ -1015,6 +1536,7 @@
         },
         {
           "name": "maxDepth",
+          "description": "How far into each sequent to look. A goal that was cut off at this depth is reported with truncated set, so a caller can tell a clean empty result from an incomplete one.",
           "required": false,
           "schema": {
             "type": "integer"
@@ -1023,6 +1545,7 @@
       ],
       "result": {
         "name": "diagnostics",
+        "description": "One entry per open goal of the proof, in goal order.",
         "required": true,
         "schema": {
           "type": "array",
@@ -1034,45 +1557,76 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32007,
-          "message": "TASK_CONFLICT",
+          "message": "TASK_CONFLICT — something is already working on this subject",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "Something is already working on this subject."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "asking why a proof did not close",
+          "description": "One entry per open goal.",
+          "params": [
+            {
+              "name": "proof",
+              "value": {
+                "proofId": "prf-l1evdrli"
+              }
+            }
+          ],
+          "result": {
+            "name": "diagnostics",
+            "value": [
+              {
+                "goalId": 29,
+                "stuckPoints": [],
+                "truncated": false
+              },
+              {
+                "goalId": 30,
+                "stuckPoints": [],
+                "truncated": false
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "task.get",
       "summary": "One task, as the server has it.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/task"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "taskId",
+          "description": "The taskId a method that started work returned.",
           "required": true,
           "schema": {
             "type": "string"
@@ -1081,6 +1635,7 @@
       ],
       "result": {
         "name": "task",
+        "description": "The task as it stands. A task carries its result once it has succeeded.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/TaskHandle"
@@ -1089,37 +1644,84 @@
       "errors": [
         {
           "code": -32010,
-          "message": "TASK_NOT_FOUND",
+          "message": "TASK_NOT_FOUND — the task identifier is unknown",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The task identifier is unknown."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "collecting the result of a finished search",
+          "description": "SUCCEEDED says the search ran to an end. Whether the contract holds is result.statistics.closed, and nothing else here.",
+          "params": [
+            {
+              "name": "taskId",
+              "value": "task-vtarwnwt"
+            }
+          ],
+          "result": {
+            "name": "task",
+            "value": {
+              "taskId": "task-vtarwnwt",
+              "kind": "AUTO",
+              "status": "SUCCEEDED",
+              "subject": {
+                "proofId": "prf-mti96bu2"
+              },
+              "result": {
+                "proof": {
+                  "proofId": "prf-mti96bu2"
+                },
+                "outcome": "EXHAUSTED",
+                "statistics": {
+                  "closed": true,
+                  "openGoals": 0,
+                  "nodes": 29,
+                  "branches": 1,
+                  "totalRuleApps": 81,
+                  "interactiveSteps": 0,
+                  "symbExApps": 11,
+                  "smtSolverApps": 0,
+                  "loopInvApps": 0,
+                  "operationContractApps": 0,
+                  "dependencyContractApps": 0,
+                  "blockLoopContractApps": 0,
+                  "autoModeTimeMs": 102
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     {
       "name": "task.list",
       "summary": "Every task this server knows about.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/task"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [],
       "result": {
         "name": "tasks",
+        "description": "Every task this instance knows about, finished ones included.",
         "required": true,
         "schema": {
           "type": "array",
@@ -1131,30 +1733,53 @@
       "errors": [
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "seeing everything this instance has run",
+          "params": [],
+          "result": {
+            "name": "tasks",
+            "value": [
+              {
+                "taskId": "task-wd41s1c8",
+                "kind": "LOAD",
+                "status": "SUCCEEDED",
+                "result": {
+                  "envId": "env-yihz4thv"
+                }
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "task.cancel",
       "summary": "Ask a task to stop.",
       "description": "Reports whether the request was passed on, not that the task has stopped: KeY notices between rule applications. Poll until the status reaches CANCELLED.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/task"
+        }
+      ],
+      "paramStructure": "by-name",
       "params": [
         {
           "name": "taskId",
+          "description": "The task to interrupt. Cancelling is a request: the worker is interrupted at the next point KeY checks, and the task ends as CANCELLED once it stops.",
           "required": true,
           "schema": {
             "type": "string"
@@ -1163,6 +1788,7 @@
       ],
       "result": {
         "name": "ok",
+        "description": "Whether the interrupt was delivered. false means there was nothing to interrupt, because the task had already finished. true means the worker was asked to stop; it reaches status CANCELLED once it actually does, so poll task.get for that.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/Ok"
@@ -1171,39 +1797,59 @@
       "errors": [
         {
           "code": -32010,
-          "message": "TASK_NOT_FOUND",
+          "message": "TASK_NOT_FOUND — the task identifier is unknown",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The task identifier is unknown."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
         }
       ],
-      "paramStructure": "by-name"
+      "examples": [
+        {
+          "name": "interrupting a search that is taking too long",
+          "description": "false here means the task had already finished, so there was nothing to interrupt.",
+          "params": [
+            {
+              "name": "taskId",
+              "value": "task-vtarwnwt"
+            }
+          ],
+          "result": {
+            "name": "ok",
+            "value": {
+              "ok": false
+            }
+          }
+        }
+      ]
     },
     {
       "name": "proof.save",
       "summary": "Write a proof to disk in KeY's own format.",
       "description": "Until a proof is written out it lives only as long as this server, which makes every result unreviewable: there is nothing to read, re-check or commit. The format is KeY's, so the file can be loaded by KeY itself and not only by this server.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/proof"
+        }
+      ],
       "paramStructure": "by-name",
       "params": [
         {
           "name": "proof",
+          "description": "The proof to write out. It does not have to be closed; a partial proof is saved as it stands and reloads to the same partial state.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/ProofRef"
@@ -1228,6 +1874,7 @@
       ],
       "result": {
         "name": "saved",
+        "description": "Where the proof was written and how large the file is.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/SavedProof"
@@ -1236,35 +1883,56 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32011,
-          "message": "SAVE_FAILED",
+          "message": "SAVE_FAILED — the proof was not written. KeY's saver reports its failures by returning them rather than throwing, so this code exists to make sure one is never mistaken for a path",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof was not written. KeY's saver reports its failures by returning them rather than throwing, so this code exists to make sure one is never mistaken for a path."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
+        }
+      ],
+      "examples": [
+        {
+          "name": "writing the proof out",
+          "description": "A path relative to the workspace. Pass asBundle to get a .zproof carrying the sources as well.",
+          "params": [
+            {
+              "name": "proof",
+              "value": {
+                "proofId": "prf-mti96bu2"
+              }
+            },
+            {
+              "name": "path",
+              "value": "Adder-add.proof"
+            }
+          ],
+          "result": {
+            "name": "saved",
+            "value": {
+              "path": "/home/alice/adder/Adder-add.proof",
+              "bytes": 5005
+            }
+          }
         }
       ]
     },
@@ -1272,10 +1940,16 @@
       "name": "proof.loadFile",
       "summary": "Replay a saved proof into an environment of its own.",
       "description": "The other half of proof.save. A file that replays only in part is refused rather than served: the resulting proof looks like any other from the outside, and the steps that are missing are exactly the ones that failed.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/proof"
+        }
+      ],
       "paramStructure": "by-name",
       "params": [
         {
           "name": "path",
+          "description": "A .proof or .zproof file. Its environment is loaded first and is returned alongside the proof; a proof whose steps could not all be replayed is an error rather than a partially replayed proof.",
           "required": true,
           "schema": {
             "type": "string"
@@ -1288,32 +1962,49 @@
         "schema": {
           "$ref": "#/components/schemas/TaskHandle"
         },
-        "description": "Its result is an EnvironmentLoaded whose proof is always present."
+        "description": "A handle on the task doing the loading and the replay. Poll task.get; its result carries the environment that was loaded and the replayed proof. A proof whose steps could not all be replayed fails the task rather than arriving partially replayed."
       },
       "errors": [
         {
           "code": -32004,
-          "message": "LOAD_FAILED",
+          "message": "LOAD_FAILED — the file could not be loaded, or was replayed only in part. data.positions carries what KeY knew",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The file could not be loaded, or was replayed only in part. data.positions carries what KeY knew."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
+        }
+      ],
+      "examples": [
+        {
+          "name": "reloading a saved proof",
+          "description": "Loads the environment and replays the proof, both as one task.",
+          "params": [
+            {
+              "name": "path",
+              "value": "Adder-add.proof"
+            }
+          ],
+          "result": {
+            "name": "task",
+            "value": {
+              "taskId": "task-cg7bunak",
+              "kind": "REPLAY",
+              "status": "PENDING"
+            }
+          }
         }
       ]
     },
@@ -1321,10 +2012,16 @@
       "name": "diagnostics.listApplicableRules",
       "summary": "List the rules that could still be applied to a goal by hand.",
       "description": "Refused while a task is working on the proof, for two reasons: the probe builds rule applications against live goal state, and KeY consults its interactive rule index only while no automatic search is running — asked during one it would quietly answer from the strategy-filtered subset instead.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/diagnostics"
+        }
+      ],
       "paramStructure": "by-name",
       "params": [
         {
           "name": "goal",
+          "description": "The goal to enumerate rules for.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/GoalRef"
@@ -1341,6 +2038,7 @@
       ],
       "result": {
         "name": "rules",
+        "description": "The rules that apply to this goal right now, each with the proof script line that applies it where one exists.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/GoalRules"
@@ -1349,43 +2047,80 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32003,
-          "message": "GOAL_NOT_FOUND",
+          "message": "GOAL_NOT_FOUND — no such open goal",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "No such open goal."
+          }
         },
         {
           "code": -32007,
-          "message": "TASK_CONFLICT",
+          "message": "TASK_CONFLICT — something is already working on this proof",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "Something is already working on this proof."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit this method",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit this method."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
+        }
+      ],
+      "examples": [
+        {
+          "name": "asking what could be applied next",
+          "description": "The NO_FIND rules here come with no script: the proof script rule command cannot apply them. A rule that matches more than once gets a line carrying occ, counted from zero.",
+          "params": [
+            {
+              "name": "goal",
+              "value": {
+                "proofId": "prf-mti96bu2",
+                "goalId": 0
+              }
+            },
+            {
+              "name": "maxRules",
+              "value": 5
+            }
+          ],
+          "result": {
+            "name": "rules",
+            "value": {
+              "goalId": 0,
+              "rules": [
+                {
+                  "ruleId": "intro",
+                  "kind": "NO_FIND",
+                  "needsInstantiation": false,
+                  "needsAssumption": false,
+                  "occurrences": 1
+                },
+                {
+                  "ruleId": "less_is_total_heu",
+                  "kind": "NO_FIND",
+                  "needsInstantiation": false,
+                  "needsAssumption": false,
+                  "occurrences": 1
+                }
+              ],
+              "truncated": true
+            }
+          }
         }
       ]
     },
@@ -1393,10 +2128,16 @@
       "name": "proof.prune",
       "summary": "Cut a proof back to a node, discarding everything below it.",
       "description": "How to take back a wrong turn without starting the proof again from the contract. Refused when it would remove nothing, when the proof is closed (KeY's own default), and when a merge rule was applied below the node — undoing one of those reaches its partners on a thread this server does not control.",
+      "tags": [
+        {
+          "$ref": "#/components/tags/proof"
+        }
+      ],
       "paramStructure": "by-name",
       "params": [
         {
           "name": "proof",
+          "description": "The proof to cut back.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/ProofRef"
@@ -1413,6 +2154,7 @@
       ],
       "result": {
         "name": "pruned",
+        "description": "The goal the proof was cut back to, how many nodes went away, and what the proof looks like now.",
         "required": true,
         "schema": {
           "$ref": "#/components/schemas/PrunedProof"
@@ -1421,35 +2163,74 @@
       "errors": [
         {
           "code": -32002,
-          "message": "PROOF_NOT_FOUND",
+          "message": "PROOF_NOT_FOUND — the proof identifier is unknown or the proof was disposed of",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof identifier is unknown or the proof was disposed of."
+          }
         },
         {
           "code": -32003,
-          "message": "GOAL_NOT_FOUND",
+          "message": "GOAL_NOT_FOUND — the proof has no node with that number",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The proof has no node with that number."
+          }
         },
         {
           "code": -32602,
-          "message": "INVALID_PARAMS",
+          "message": "INVALID_PARAMS — the parameters did not fit, or there was nothing to prune at that node: it is already an open goal, it is closed and KeY declines to prune closed proofs, or a merge rule was applied below it",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The parameters did not fit, or there was nothing to prune at that node: it is already an open goal, it is closed and KeY declines to prune closed proofs, or a merge rule was applied below it."
+          }
         },
         {
           "code": -32603,
-          "message": "INTERNAL_ERROR",
+          "message": "INTERNAL_ERROR — the server hit an unexpected condition",
           "data": {
             "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "The server hit an unexpected condition."
+          }
+        }
+      ],
+      "examples": [
+        {
+          "name": "cutting a proof back to a node",
+          "description": "Everything below node 1 is discarded and it becomes an open goal again.",
+          "params": [
+            {
+              "name": "proof",
+              "value": {
+                "proofId": "prf-l1evdrli"
+              }
+            },
+            {
+              "name": "nodeId",
+              "value": 1
+            }
+          ],
+          "result": {
+            "name": "pruned",
+            "value": {
+              "goal": {
+                "proofId": "prf-l1evdrli",
+                "goalId": 1
+              },
+              "removedNodes": 31,
+              "statistics": {
+                "closed": false,
+                "openGoals": 1,
+                "nodes": 2,
+                "branches": 1,
+                "totalRuleApps": 4,
+                "interactiveSteps": 0,
+                "symbExApps": 0,
+                "smtSolverApps": 0,
+                "loopInvApps": 0,
+                "operationContractApps": 0,
+                "dependencyContractApps": 0,
+                "blockLoopContractApps": 0,
+                "autoModeTimeMs": 121
+              }
+            }
+          }
         }
       ]
     }
@@ -1461,6 +2242,7 @@
         "description": "Opaque handle on a loaded project. Pass it back as received; never build one.",
         "properties": {
           "envId": {
+            "description": "Identifier of a loaded environment.",
             "type": "string"
           }
         },
@@ -1473,6 +2255,7 @@
         "description": "Opaque handle on a proof.",
         "properties": {
           "proofId": {
+            "description": "Identifier of a proof held open by this instance.",
             "type": "string"
           }
         },
@@ -1485,9 +2268,11 @@
         "description": "Opaque handle on one goal of one proof. KeY numbers nodes per proof, so a goal has no identity outside its proof and the reference carries both halves.",
         "properties": {
           "proofId": {
+            "description": "The proof the goal belongs to.",
             "type": "string"
           },
           "goalId": {
+            "description": "The goal within that proof. Goal identifiers are the node numbers KeY assigns, and they move as a proof grows, so re-read them rather than keeping one across steps.",
             "type": "integer"
           }
         },
@@ -1501,6 +2286,7 @@
         "description": "The request was carried out. Never a statement about a proof.",
         "properties": {
           "ok": {
+            "description": "Whether the request was carried out. It reports on the request and never on a proof: no value of this field means anything was proved. Most methods only ever answer true and report failure as an error; task.cancel also answers false, when there was nothing left to interrupt.",
             "type": "boolean"
           }
         },
@@ -1513,16 +2299,20 @@
         "description": "A place in a source file KeY attached to a failure.",
         "properties": {
           "file": {
+            "description": "The file, as the environment resolved it.",
             "type": "string",
             "nullable": true
           },
           "line": {
+            "description": "1-based line number.",
             "type": "integer"
           },
           "column": {
+            "description": "1-based column number.",
             "type": "integer"
           },
           "message": {
+            "description": "What is at that position, in KeY's words.",
             "type": "string"
           }
         }
@@ -1532,18 +2322,21 @@
         "description": "Machine-readable detail on an error. Branch on the numeric code, never on message text.",
         "properties": {
           "positions": {
+            "description": "Places in the sources the error can be pinned to, when there are any. Parse and type errors carry these; a failure with no source location leaves the list empty.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SourcePosition"
             }
           },
           "detail": {
+            "description": "The underlying message, kept verbatim rather than reworded.",
             "type": "string",
             "nullable": true
           }
         }
       },
       "TaskKind": {
+        "description": "What a task is doing. It says which method started the work, not how the work turned out.",
         "type": "string",
         "enum": [
           "LOAD",
@@ -1569,12 +2362,15 @@
         "description": "The state of one long-running operation.",
         "properties": {
           "taskId": {
+            "description": "Identifier to poll with task.get and to pass to task.cancel.",
             "type": "string"
           },
           "kind": {
+            "description": "Which kind of work this task is running.",
             "$ref": "#/components/schemas/TaskKind"
           },
           "status": {
+            "description": "Where the task is. SUCCEEDED means the work ran to an end without throwing. It does NOT mean a proof closed; only Statistics.closed says that.",
             "$ref": "#/components/schemas/TaskStatus"
           },
           "subject": {
@@ -1587,6 +2383,7 @@
             "description": "Free-form progress detail while running."
           },
           "error": {
+            "description": "Why the task FAILED. Absent otherwise.",
             "$ref": "#/components/schemas/ErrorData"
           }
         },
@@ -1597,15 +2394,19 @@
         ]
       },
       "EnvironmentSummary": {
+        "description": "One loaded environment.",
         "type": "object",
         "properties": {
           "envId": {
+            "description": "Identifier to state later calls against.",
             "type": "string"
           },
           "path": {
+            "description": "What was loaded, as an absolute path.",
             "type": "string"
           },
           "proofCount": {
+            "description": "How many proofs are currently open under this environment.",
             "type": "integer"
           }
         },
@@ -1629,6 +2430,7 @@
         "description": "INFORMATION_FLOW is only produced when a provider of KeY's InformationFlowContractSupplier is on the class path, which this build does not ship. OTHER is reported rather than guessing at a kind that might be wrong."
       },
       "ProofObligation": {
+        "description": "One thing KeY can be asked to prove, derived from a specification.",
         "type": "object",
         "properties": {
           "contractId": {
@@ -1636,9 +2438,11 @@
             "description": "KeY's unique internal contract name. Pass it to proof.start."
           },
           "kind": {
+            "description": "What kind of obligation this is.",
             "$ref": "#/components/schemas/ProofObligationKind"
           },
           "targetClass": {
+            "description": "Fully qualified name of the class it is about.",
             "type": "string"
           },
           "targetMember": {
@@ -1646,6 +2450,7 @@
             "description": "Signature such as add(int, int); the parameter types distinguish overloads."
           },
           "hasExistingProof": {
+            "description": "Whether a proof for this obligation is already open in this instance.",
             "type": "boolean"
           }
         },
@@ -1662,42 +2467,55 @@
         "description": "What is known about a proof. `closed` is the only field that answers whether anything was verified, and it is read from KeY's own Proof.closed() every time this object is built: never cached, never defaulted, never inferred from a task having finished.",
         "properties": {
           "closed": {
+            "description": "Whether the proof is closed. This is KeY's own Proof.closed(), and it is the only field in this protocol that says a contract has been proved. No task status, no macro finishing and no absence of errors means the same thing.",
             "type": "boolean"
           },
           "openGoals": {
+            "description": "How many goals are still open. Zero exactly when closed is true.",
             "type": "integer"
           },
           "nodes": {
+            "description": "Nodes in the proof tree.",
             "type": "integer"
           },
           "branches": {
+            "description": "Branches in the proof tree.",
             "type": "integer"
           },
           "totalRuleApps": {
+            "description": "Rule applications of every kind.",
             "type": "integer"
           },
           "interactiveSteps": {
+            "description": "Rule applications that came from a script or a macro rather than from the automatic search.",
             "type": "integer"
           },
           "symbExApps": {
+            "description": "Symbolic execution steps.",
             "type": "integer"
           },
           "smtSolverApps": {
+            "description": "Goals discharged by an external SMT solver. These are closed on the solver's word, not by KeY's calculus.",
             "type": "integer"
           },
           "loopInvApps": {
+            "description": "Loop invariant rule applications.",
             "type": "integer"
           },
           "operationContractApps": {
+            "description": "Method contract applications.",
             "type": "integer"
           },
           "dependencyContractApps": {
+            "description": "Dependency contract applications.",
             "type": "integer"
           },
           "blockLoopContractApps": {
+            "description": "Block and loop contract applications.",
             "type": "integer"
           },
           "autoModeTimeMs": {
+            "description": "Milliseconds spent in the automatic search.",
             "type": "integer"
           }
         },
@@ -1725,12 +2543,15 @@
         "description": "The result member of a finished AUTO task.",
         "properties": {
           "proof": {
+            "description": "The proof the search ran on.",
             "$ref": "#/components/schemas/ProofRef"
           },
           "outcome": {
+            "description": "Why the search stopped.",
             "$ref": "#/components/schemas/AutoModeOutcome"
           },
           "statistics": {
+            "description": "What the proof looks like now, including whether it closed.",
             "$ref": "#/components/schemas/Statistics"
           }
         },
@@ -1745,9 +2566,11 @@
         "description": "The result member of a finished MACRO or SCRIPT task.",
         "properties": {
           "proof": {
+            "description": "The proof the work ran on.",
             "$ref": "#/components/schemas/ProofRef"
           },
           "statistics": {
+            "description": "What the proof looks like now, including whether it closed.",
             "$ref": "#/components/schemas/Statistics"
           }
         },
@@ -1761,18 +2584,23 @@
         "description": "goalId and nodeId are the same number today: KeY identifies a goal by the serial of the node it sits on. Both are reported because they are used in different places and a client should not have to know they coincide.",
         "properties": {
           "goal": {
+            "description": "Reference to pass to the methods that act on a goal.",
             "$ref": "#/components/schemas/GoalRef"
           },
           "goalId": {
+            "description": "The goal's identifier, the same number as in goal.",
             "type": "integer"
           },
           "nodeId": {
+            "description": "The proof node this goal sits at. Pass it to proof.prune to cut back here.",
             "type": "integer"
           },
           "isOpen": {
+            "description": "Whether the goal still needs work.",
             "type": "boolean"
           },
           "isLinked": {
+            "description": "Whether the goal is closed by a link to another part of the proof rather than by its own branch.",
             "type": "boolean"
           }
         },
@@ -1794,21 +2622,25 @@
         "description": "TEXT is KeY's pretty-printed rendering, UNICODE the same with logical symbols, and STRUCTURED the same again with each formula also taken apart into its symbolic state, the program still to run, and what must hold once it has."
       },
       "Sequent": {
+        "description": "The rendering of one goal's sequent.",
         "type": "object",
         "properties": {
           "antecedent": {
+            "description": "The formulas assumed, one rendered string each.",
             "type": "array",
             "items": {
               "type": "string"
             }
           },
           "succedent": {
+            "description": "The formulas to be shown, one rendered string each. The goal holds if any one of them follows from all of the antecedent.",
             "type": "array",
             "items": {
               "type": "string"
             }
           },
           "format": {
+            "description": "The format the strings were rendered in.",
             "$ref": "#/components/schemas/SequentFormat"
           },
           "formulas": {
@@ -1826,6 +2658,7 @@
         ]
       },
       "Macro": {
+        "description": "One proof macro: a named, pre-packaged sequence of prover steps.",
         "type": "object",
         "properties": {
           "macroId": {
@@ -1833,13 +2666,16 @@
             "description": "Also the macro's name inside a proof script."
           },
           "name": {
+            "description": "The macro's name as KeY shows it.",
             "type": "string"
           },
           "category": {
+            "description": "How KeY groups the macro in its own menus.",
             "type": "string",
             "nullable": true
           },
           "description": {
+            "description": "What the macro does, in KeY's words.",
             "type": "string",
             "nullable": true
           }
@@ -1866,12 +2702,15 @@
             "description": "Stable identifier: the rule's implementation class name."
           },
           "ruleName": {
+            "description": "The same rule as KeY displays it.",
             "type": "string"
           },
           "positionHint": {
+            "description": "Where in the goal it would have applied, in readable terms.",
             "type": "string"
           },
           "reason": {
+            "description": "Why it did not apply.",
             "$ref": "#/components/schemas/StuckReason"
           },
           "source": {
@@ -1891,9 +2730,11 @@
         "description": "An empty stuckPoints list is a finding, not a blank: no built-in rule applies here, so the goal is not waiting on a missing specification. Read it with lastSearchOutcome to tell a prover that ran out of ideas from one that ran out of budget.",
         "properties": {
           "goalId": {
+            "description": "The goal this entry is about.",
             "type": "integer"
           },
           "stuckPoints": {
+            "description": "Where the search ran out of ways forward in this goal. An empty list does not mean the goal is fine: read lastSearchOutcome and truncated to tell 'nothing is missing' from 'the search never got that far'.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/StuckPoint"
@@ -1915,18 +2756,23 @@
         ]
       },
       "ServerVersion": {
+        "description": "The identity and capabilities of one running instance.",
         "type": "object",
         "properties": {
           "apiVersion": {
+            "description": "The protocol version, the same string this document is versioned with. Clients should check it.",
             "type": "string"
           },
           "keyVersion": {
+            "description": "The version of KeY doing the proving.",
             "type": "string"
           },
           "instanceId": {
+            "description": "Identifies this process, so a client can tell a restarted instance from the one it was talking to.",
             "type": "string"
           },
           "threads": {
+            "description": "How many prover threads the instance was started with. Fixed for its lifetime.",
             "type": "integer"
           }
         },
@@ -1942,9 +2788,11 @@
         "description": "Where a proof was written. That this object exists at all means the file is on disk: a save that did not happen is reported as an error, never as a path.",
         "properties": {
           "path": {
+            "description": "Absolute path of the file that was written.",
             "type": "string"
           },
           "bytes": {
+            "description": "Its size on disk.",
             "type": "integer"
           }
         },
@@ -1958,9 +2806,11 @@
         "description": "What a finished LOAD or REPLAY task produced. A .proof or .zproof file brings a proof with it; the field is absent for a project or a problem file that declares none.",
         "properties": {
           "envId": {
+            "description": "Identifier of the environment that was loaded.",
             "type": "string"
           },
           "proof": {
+            "description": "The proof that came with the file, when a .proof or .zproof was loaded. Absent when sources were loaded.",
             "$ref": "#/components/schemas/ProofRef"
           }
         },
@@ -1981,6 +2831,7 @@
         "description": "One formula taken apart. A proof obligation in mid-flight prints as a single formula several hundred characters long whose interesting part is the last thirty; separated, each piece answers a different question and can be read on its own. The split is KeY's own, taken from the position table it builds while printing, so it cannot drift from what KeY thinks the formula is.",
         "properties": {
           "side": {
+            "description": "Which side of the turnstile the formula is on.",
             "$ref": "#/components/schemas/SequentSide"
           },
           "index": {
@@ -2029,6 +2880,7 @@
             "description": "The taclet's name, which is what a proof script's rule command takes."
           },
           "kind": {
+            "description": "Whether the rule matches a formula and where. NO_FIND rules apply to a sequent as a whole; the rule command cannot apply them, so they come with no script.",
             "$ref": "#/components/schemas/RuleKind"
           },
           "side": {
@@ -2069,9 +2921,11 @@
         "description": "What could still be applied to a goal by hand: the complement of stuck points. Those say what wants to apply and cannot; this says what could apply and the automatic strategy did not choose, which after a search that came back EXHAUSTED is what is left to look at. No judgement is offered about which are worth trying — cut and hide_left apply almost anywhere. Rules carrying a `script` can be applied as they stand; the rest are offered because they are genuinely applicable and a caller may know what to supply.",
         "properties": {
           "goalId": {
+            "description": "The goal these rules apply to.",
             "type": "integer"
           },
           "rules": {
+            "description": "The rules that match, one entry per rule rather than per occurrence.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ApplicableRule"
@@ -2093,12 +2947,15 @@
         "description": "What pruning removed. The count is reported because KeY answers \"nothing to do\" and \"done\" in ways that look alike from outside; a prune that would remove nothing is refused rather than reported here.",
         "properties": {
           "goal": {
+            "description": "The goal the proof was cut back to, now open again.",
             "$ref": "#/components/schemas/GoalRef"
           },
           "removedNodes": {
+            "description": "How many nodes were discarded.",
             "type": "integer"
           },
           "statistics": {
+            "description": "What the proof looks like after pruning. Pruning an open proof cannot close it, and pruning a closed one opens it.",
             "$ref": "#/components/schemas/Statistics"
           }
         },
@@ -2108,6 +2965,36 @@
           "statistics"
         ]
       }
+    },
+    "tags": {
+      "server": {
+        "name": "server",
+        "description": "The instance itself: what it is, whether it is answering, what it can do, and how to stop it. None of these methods touch a proof."
+      },
+      "environment": {
+        "name": "environment",
+        "description": "Loading Java sources and their specifications, and listing the proof obligations that come out of them. An environment owns the class types and the contracts every proof under it is stated against."
+      },
+      "proof": {
+        "name": "proof",
+        "description": "The lifetime of a single proof attempt: starting one from a contract, running the automatic search, asking what it has achieved, undoing part of it, and writing it to disk."
+      },
+      "goal": {
+        "name": "goal",
+        "description": "Working on the open goals of a proof: reading a sequent, and driving the prover at a goal by hand with a macro or a proof script."
+      },
+      "diagnostics": {
+        "name": "diagnostics",
+        "description": "Answering why a proof did not close. These methods only observe; none of them changes a proof."
+      },
+      "task": {
+        "name": "task",
+        "description": "The asynchronous work anything long-running is handed off to. A task finishing reports that the work ran to an end, and nothing about the proof it ran on."
+      }
     }
+  },
+  "externalDocs": {
+    "description": "The KeY prover this server embeds: its calculus, its specification language, and how to read the sequents these methods return.",
+    "url": "https://key-project.org/docs/"
   }
 }

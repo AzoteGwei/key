@@ -10,7 +10,12 @@ package org.key_project.server.dto;
  * It reports that the request was carried out, nothing more. In particular it is never a statement
  * about a proof.
  *
- * @param ok always {@code true}; a failure arrives as an error object instead
+ * <p>
+ * Nearly every method that returns this returns {@code true} and reports failure as an error
+ * object instead. {@code task.cancel} is the exception: it answers {@code false} when there was
+ * nothing to interrupt, which is an outcome rather than a failure.
+ *
+ * @param ok whether the request was carried out
  */
 public record Ok(boolean ok) {
 }

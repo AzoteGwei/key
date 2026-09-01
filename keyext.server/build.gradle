@@ -16,6 +16,10 @@ dependencies {
     // slf4j needs a binding at runtime, otherwise the shadow jar logs nothing at all.
     // runtimeOnly keeps logback off the compile classpath so no code can depend on it.
     runtimeOnly(libs.logback.classic)
+
+    // Validates openrpc.json against the official OpenRPC meta-schema. Test scope only: the
+    // document is checked when it is built, never when it is served.
+    testImplementation(libs.json.schema.validator)
 }
 
 application {
