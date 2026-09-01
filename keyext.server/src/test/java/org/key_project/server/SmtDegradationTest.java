@@ -46,7 +46,10 @@ class SmtDegradationTest {
      * @return the solver the tests then ask
      */
     private static SolverType breakEverySolver() {
-        Path missing = Path.of("/nonexistent").resolve("keyext-server-no-such-solver");
+        // Under the temporary directory, so it is absent on every platform rather than only on
+        // the one whose root layout was assumed.
+        Path missing = Path.of(System.getProperty("java.io.tmpdir"))
+                .resolve("keyext-server-no-such-solver-" + System.nanoTime());
         assertThat(Files.exists(missing)).isFalse();
 
         Collection<SolverType> solvers = SolverTypes.getSolverTypes();

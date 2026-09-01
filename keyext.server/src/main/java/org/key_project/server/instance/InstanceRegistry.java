@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -65,18 +66,39 @@ public final class InstanceRegistry {
      * The directory instance records are kept in for this user.
      *
      * <p>
-     * {@code XDG_STATE_HOME} when it is set, otherwise the {@code ~/.local/state} the XDG
-     * specification names as its default. State, not config or cache: these files describe what is
-     * running now, they are neither settings a user edits nor data that can be regenerated.
+     * State, not config or cache: these files describe what is running now. They are neither
+     * settings anybody edits nor data that could be regenerated, and a stale one is meaningless
+     * rather than merely out of date.
+     *
+     * <p>
+     * {@code XDG_STATE_HOME} decides it when set, on every platform, so a caller can always say
+     * where. Otherwise the platform decides: {@code %LOCALAPPDATA%} on Windows, which is where
+     * per-machine state belongs there and is not roamed to other machines the user signs in to —
+     * which matters, because a record naming a port on this machine is of no use on another. On
+     * everything else it is the {@code ~/.local/state} the XDG specification names as its
+     * default.
      *
      * @return the per-user registry directory
      */
     public static Path userStateDirectory() {
+        return platformStateDirectory().resolve(STATE_DIRECTORY).resolve("instances");
+    }
+
+    private static Path platformStateDirectory() {
         String configured = System.getenv("XDG_STATE_HOME");
-        Path base = configured == null || configured.isBlank()
-                ? Path.of(System.getProperty("user.home"), ".local", "state")
-                : Path.of(configured);
-        return base.resolve(STATE_DIRECTORY).resolve("instances");
+        if (configured != null && !configured.isBlank()) {
+            return Path.of(configured);
+        }
+        if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows")) {
+            String localAppData = System.getenv("LOCALAPPDATA");
+            if (localAppData != null && !localAppData.isBlank()) {
+                return Path.of(localAppData);
+            }
+            // No LOCALAPPDATA is unusual but not impossible. Falling back to the home directory
+            // keeps the server working rather than failing over where to put a bookkeeping file.
+            return Path.of(System.getProperty("user.home"), "AppData", "Local");
+        }
+        return Path.of(System.getProperty("user.home"), ".local", "state");
     }
 
     /**

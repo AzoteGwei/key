@@ -99,11 +99,19 @@ class ProofPersistenceTest {
     void aSaveThatDidNotHappenIsReportedAsAFailure() throws Exception {
         String proofId = prove("max", "Max");
 
+        // A file where a directory is required: the parent of the target is a regular file, so
+        // the write cannot succeed on any platform. Naming a specific unwritable system path
+        // instead would pick one that only exists on one of them.
+        Path blocker = saveDirectory.resolve("not-a-directory");
+        Files.writeString(blocker, "occupied");
+        Path impossible = blocker.resolve("place.proof");
+
         // KeY's saver reports a failure by returning it and throws nothing at all, so a server
         // that did not look at the return value would answer with a path to a file that does not
         // exist. This is the test that says it looked.
         JsonNode response = client.call("proof.save",
-            "{\"proof\":{\"proofId\":\"" + proofId + "\"},\"path\":\"/proc/no/such/place.proof\"}");
+            "{\"proof\":{\"proofId\":\"" + proofId + "\"},\"path\":\"" + json(impossible)
+                + "\"}");
 
         assertThat(response.has("result")).isFalse();
         assertThat(response.get("error").get("code").asInt()).isEqualTo(-32011);

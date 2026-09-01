@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Finding a server, and recognising one that is no longer there.
@@ -88,6 +89,19 @@ class InstanceRegistryTest {
         // A half-written or hand-edited file must cost its own entry, not the whole listing.
         assertThat(registry.list()).hasSize(1);
         assertThat(registry.list().get(0).record().instanceId()).isEqualTo("inst-good");
+    }
+
+    @Test
+    void theRegistryGoesWhereTheEnvironmentSaysOnEveryPlatform(@TempDir Path chosen) {
+        String previous = System.getenv("XDG_STATE_HOME");
+        assumeTrue(previous != null, "the build points this at the build directory");
+
+        // Honoured everywhere, not only where the convention comes from, so a caller that needs
+        // to say where can always say it — which is what lets these tests run without writing
+        // into the developer's own home directory.
+        assertThat(InstanceRegistry.userStateDirectory()).startsWith(Path.of(previous));
+        assertThat(InstanceRegistry.userStateDirectory().getFileName())
+                .isEqualTo(Path.of("instances"));
     }
 
     @Test

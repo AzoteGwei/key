@@ -30,11 +30,6 @@ jobs:
           key.core.testgen, keyext.isabelletranslation,  keyext.ui.testgen,  key.ncore.calculus,
           key.util, key.core.example, keyext.caching, key.core.wd, key.core.infflow,
           keyext.proofmanagement, keyext.server]
-        # keyext.server is Linux-only for now: its instance registry will grow
-        # XDG_STATE_HOME handling that has no Windows counterpart yet.
-        exclude:
-          - os: windows-latest
-            modules: keyext.server
     continue-on-error: true
     runs-on: ${{ matrix.os }}
     env:
