@@ -39,7 +39,14 @@ public enum RpcErrorCode {
     TASK_CONFLICT(-32007),
     /** An SMT solver is missing or not executable. */
     SOLVER_UNAVAILABLE(-32008),
-    /** A sequent format was requested that this version does not implement. */
+    /**
+     * A format was requested that this version does not implement.
+     *
+     * <p>
+     * Currently unreachable: every declared sequent format is implemented. Kept because the
+     * protocol is frozen and a client may already branch on it, and because the next format to
+     * be declared will arrive before it is built.
+     */
     UNSUPPORTED_FORMAT(-32009),
     /** The task identifier is unknown. */
     TASK_NOT_FOUND(-32010),

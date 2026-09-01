@@ -11,14 +11,12 @@ import java.util.ServiceLoader;
 
 import de.uka.ilkd.key.macros.ProofMacro;
 import de.uka.ilkd.key.nparser.ParsingFacade;
-import de.uka.ilkd.key.pp.LogicPrinter;
 import de.uka.ilkd.key.proof.Goal;
 import de.uka.ilkd.key.proof.Node;
 import de.uka.ilkd.key.proof.Proof;
 import de.uka.ilkd.key.scripts.ProofScriptEngine;
 import de.uka.ilkd.key.scripts.ScriptException;
 
-import org.key_project.prover.sequent.SequentFormula;
 import org.key_project.server.ProofFacts;
 import org.key_project.server.ServerUserInterfaceControl;
 import org.key_project.server.dto.GoalRef;
@@ -26,11 +24,10 @@ import org.key_project.server.dto.GoalSummary;
 import org.key_project.server.dto.MacroInfo;
 import org.key_project.server.dto.ProofRef;
 import org.key_project.server.dto.ProofRunResult;
-import org.key_project.server.dto.SequentFormat;
-import org.key_project.server.dto.SequentView;
 import org.key_project.server.dto.TaskKind;
 import org.key_project.server.exec.InterruptibleRun;
 import org.key_project.server.exec.TaskRunner;
+import org.key_project.server.pp.SequentRenderer;
 import org.key_project.server.registry.ProofRegistry;
 import org.key_project.server.registry.RegisteredProof;
 import org.key_project.server.rpc.Concurrency;
@@ -130,30 +127,9 @@ public final class GoalMethods {
     }
 
     private Object sequent(SequentRequest request) {
-        if (request.formatOrDefault() != SequentFormat.TEXT) {
-            // Declared in the protocol, not implemented here. Handing back text under the label
-            // the client did not ask for would be worse than saying no.
-            throw new RpcException(RpcErrorCode.UNSUPPORTED_FORMAT,
-                "Sequent format " + request.formatOrDefault() + " is declared but not implemented; "
-                    + "this version renders " + SequentFormat.TEXT + " only");
-        }
         Goal goal = requireGoal(request.goal());
-        Proof proof = goal.proof();
-
-        List<String> antecedent = new ArrayList<>();
-        for (SequentFormula formula : goal.sequent().antecedent()) {
-            antecedent.add(print(formula, proof));
-        }
-        List<String> succedent = new ArrayList<>();
-        for (SequentFormula formula : goal.sequent().succedent()) {
-            succedent.add(print(formula, proof));
-        }
-        return new SequentView(antecedent, succedent, SequentFormat.TEXT);
-    }
-
-    private static String print(SequentFormula formula, Proof proof) {
-        return LogicPrinter.quickPrintTerm((de.uka.ilkd.key.logic.JTerm) formula.formula(),
-            proof.getServices()).trim();
+        return SequentRenderer.render(goal.sequent(), goal.proof().getServices(),
+            request.formatOrDefault());
     }
 
     private Object macros(ProofRequest request) {

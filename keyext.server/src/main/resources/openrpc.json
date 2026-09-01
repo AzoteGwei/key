@@ -704,14 +704,6 @@
           "description": "No such open goal. Goals close and are replaced as a proof grows; list them again."
         },
         {
-          "code": -32009,
-          "message": "UNSUPPORTED_FORMAT",
-          "data": {
-            "$ref": "#/components/schemas/ErrorData"
-          },
-          "description": "A sequent format that is declared but not implemented was requested."
-        },
-        {
           "code": -32602,
           "message": "INVALID_PARAMS",
           "data": {
@@ -728,7 +720,8 @@
           "description": "The server hit an unexpected condition."
         }
       ],
-      "paramStructure": "by-name"
+      "paramStructure": "by-name",
+      "description": "All three declared formats are implemented. STRUCTURED additionally reports each formula split into its symbolic state, the program still to run, and what must hold once it has."
     },
     {
       "name": "goal.listAvailableMacros",
@@ -1662,7 +1655,7 @@
           "UNICODE",
           "STRUCTURED"
         ],
-        "description": "Only TEXT is implemented. The others are declared because the protocol commits to them; asking for one returns -32009 rather than text under the wrong label."
+        "description": "TEXT is KeY's pretty-printed rendering, UNICODE the same with logical symbols, and STRUCTURED the same again with each formula also taken apart into its symbolic state, the program still to run, and what must hold once it has."
       },
       "Sequent": {
         "type": "object",
@@ -1681,6 +1674,13 @@
           },
           "format": {
             "$ref": "#/components/schemas/SequentFormat"
+          },
+          "formulas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StructuredFormula"
+            },
+            "description": "Present only for STRUCTURED. antecedent and succedent are present regardless."
           }
         },
         "required": [
@@ -1830,6 +1830,49 @@
         },
         "required": [
           "envId"
+        ]
+      },
+      "SequentSide": {
+        "type": "string",
+        "enum": [
+          "ANTECEDENT",
+          "SUCCEDENT"
+        ],
+        "description": "Which side of the turnstile a formula sits on: assumed, or to be shown."
+      },
+      "StructuredFormula": {
+        "type": "object",
+        "description": "One formula taken apart. A proof obligation in mid-flight prints as a single formula several hundred characters long whose interesting part is the last thirty; separated, each piece answers a different question and can be read on its own. The split is KeY's own, taken from the position table it builds while printing, so it cannot drift from what KeY thinks the formula is.",
+        "properties": {
+          "side": {
+            "$ref": "#/components/schemas/SequentSide"
+          },
+          "index": {
+            "type": "integer",
+            "description": "Position within that side, matching the antecedent or succedent array."
+          },
+          "text": {
+            "type": "string",
+            "description": "The whole formula."
+          },
+          "state": {
+            "type": "string",
+            "description": "The symbolic state (KeY's update). Absent when there is none."
+          },
+          "program": {
+            "type": "string",
+            "description": "The Java still to be executed. Absent when there is none."
+          },
+          "claim": {
+            "type": "string",
+            "description": "The formula with the state and the program elided, marked with an ellipsis: what remains to be shown about them. For a formula with neither, the whole formula."
+          }
+        },
+        "required": [
+          "side",
+          "index",
+          "text",
+          "claim"
         ]
       }
     }

@@ -73,16 +73,79 @@ class GoalMethodsTest {
     }
 
     @Test
-    void refusesSequentFormatsItHasNotImplemented() throws Exception {
+    void everyDeclaredSequentFormatIsAnsweredInThatFormat() throws Exception {
         int goalId = firstGoalId();
 
-        // Declared in the protocol but not built. Returning text under the label the client did
-        // not ask for would leave it building on a promise that was never kept.
-        assertThat(client.errorCode("goal.getSequent", goal(goalId, "STRUCTURED")))
-                .isEqualTo(-32009);
-        assertThat(client.errorCode("goal.getSequent", goal(goalId, "UNICODE"))).isEqualTo(-32009);
-        assertThat(client.result("goal.getSequent", goal(goalId, "TEXT")).get("format").asText())
-                .isEqualTo("TEXT");
+        for (String format : new String[] { "TEXT", "UNICODE", "STRUCTURED" }) {
+            JsonNode sequent = client.result("goal.getSequent", goal(goalId, format));
+            // The label a client gets back has to be the one it asked for. Answering in a
+            // different format under the requested name would leave it building on a promise
+            // that was never kept.
+            assertThat(sequent.get("format").asText()).isEqualTo(format);
+            assertThat(sequent.get("succedent")).describedAs("%s", format).isNotEmpty();
+        }
+        assertThat(client.errorCode("goal.getSequent", goal(goalId, "NO_SUCH_FORMAT")))
+                .isEqualTo(-32602);
+    }
+
+    @Test
+    void unicodeUsesLogicalSymbolsWhereTheTextFormatSpellsThemOut() throws Exception {
+        int goalId = firstGoalId();
+
+        String plain = client.result("goal.getSequent", goal(goalId, "TEXT")).toString();
+        String unicode = client.result("goal.getSequent", goal(goalId, "UNICODE")).toString();
+
+        assertThat(unicode).isNotEqualTo(plain);
+    }
+
+    @Test
+    void structuredSeparatesTheStateTheProgramAndWhatMustHold() throws Exception {
+        int goalId = firstGoalId();
+
+        JsonNode sequent = client.result("goal.getSequent", goal(goalId, "STRUCTURED"));
+        JsonNode formulas = sequent.get("formulas");
+
+        assertThat(formulas).isNotEmpty();
+        assertThat(formulas).hasSize(
+            sequent.get("antecedent").size() + sequent.get("succedent").size());
+
+        JsonNode obligation = null;
+        for (JsonNode formula : formulas) {
+            assertThat(formula.get("side").asText()).isIn("ANTECEDENT", "SUCCEDENT");
+            assertThat(formula.get("claim").asText()).isNotBlank();
+            if (formula.has("program")) {
+                obligation = formula;
+            }
+        }
+
+        // The point of the format. A proof obligation in flight is one enormous formula whose
+        // interesting part is the last thirty characters of several hundred; separated, each
+        // piece answers a different question.
+        assertThat(obligation).describedAs("a goal mid-execution carries a program").isNotNull();
+        assertThat(obligation.get("side").asText()).isEqualTo("SUCCEDENT");
+        assertThat(obligation.get("program").asText()).contains("Max.max");
+        assertThat(obligation.get("state").asText()).contains(":=");
+        // What remains once the state and the program are set aside is what has to be shown, and
+        // it is far shorter than the whole.
+        assertThat(obligation.get("claim").asText()).contains("…");
+        assertThat(obligation.get("claim").asText().length())
+                .isLessThan(obligation.get("text").asText().length());
+    }
+
+    @Test
+    void theFormulaTextsAgreeWithTheStructuredBreakdown() throws Exception {
+        int goalId = firstGoalId();
+
+        JsonNode sequent = client.result("goal.getSequent", goal(goalId, "STRUCTURED"));
+
+        // A client reading `succedent[0]` and a client reading `formulas[i].text` for the
+        // succedent's first formula must be reading the same thing.
+        for (JsonNode formula : sequent.get("formulas")) {
+            String side = formula.get("side").asText().equals("ANTECEDENT") ? "antecedent"
+                    : "succedent";
+            assertThat(sequent.get(side).get(formula.get("index").asInt()).asText())
+                    .isEqualTo(formula.get("text").asText());
+        }
     }
 
     @Test
