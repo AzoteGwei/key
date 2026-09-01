@@ -58,6 +58,7 @@ public final class KeyServerInstance implements AutoCloseable {
 
     private final SseHub events;
     private final HttpTransport transport;
+    private final java.util.Set<String> methodNames;
     private final InstanceRegistry registry;
     private final @Nullable IdleTimeout idleTimeout;
     private final CountDownLatch stopped = new CountDownLatch(1);
@@ -88,7 +89,8 @@ public final class KeyServerInstance implements AutoCloseable {
         JsonRpcDispatcher dispatcher = new JsonRpcDispatcher(mapper, executor);
         TaskRunner runner = new TaskRunner(executor, tasks, control);
 
-        new ServerMethods(instanceId, options).registerOn(dispatcher);
+        new ServerMethods(instanceId, options, tasks, mapper, this::close)
+                .registerOn(dispatcher);
         new TaskMethods(tasks).registerOn(dispatcher);
         new EnvironmentMethods(options, control, environments, runner, proofs)
                 .registerOn(dispatcher);
@@ -101,8 +103,17 @@ public final class KeyServerInstance implements AutoCloseable {
         this.idleTimeout = options.hasIdleTimeout()
                 ? new IdleTimeout(options.idleTimeoutSeconds(), tasks::hasActiveTask, this::close)
                 : null;
-        LOGGER.info("Instance {} exposes {} methods.", instanceId,
-            dispatcher.methodNames().size());
+        this.methodNames = dispatcher.methodNames();
+        LOGGER.info("Instance {} exposes {} methods.", instanceId, methodNames.size());
+    }
+
+    /**
+     * The names of every callable method, for the test that keeps the OpenRPC document honest.
+     *
+     * @return the registered method names
+     */
+    public java.util.Set<String> methodNames() {
+        return methodNames;
     }
 
     /**
@@ -158,8 +169,10 @@ public final class KeyServerInstance implements AutoCloseable {
         if (idleTimeout != null) {
             idleTimeout.close();
         }
-        transport.close();
+        // The event streams first: each holds an exchange open, and the transport waits for
+        // in-flight exchanges before it stops.
         events.close();
+        transport.close();
         proofs.closeAll();
         environments.closeAll();
         executor.close();

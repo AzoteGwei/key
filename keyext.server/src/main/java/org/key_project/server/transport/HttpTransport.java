@@ -37,6 +37,9 @@ public final class HttpTransport implements AutoCloseable {
     private static final String ENDPOINT = "/rpc";
     private static final int MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 
+    /** How long an in-flight exchange is given to finish when the instance stops. */
+    private static final int SHUTDOWN_GRACE_SECONDS = 1;
+
     private final JsonRpcDispatcher dispatcher;
     private final SseHub events;
     private final HttpServer server;
@@ -131,7 +134,10 @@ public final class HttpTransport implements AutoCloseable {
 
     @Override
     public void close() {
-        server.stop(0);
+        // A second of grace rather than none. A client that asked this server to shut down is
+        // owed the answer to that request; stopping instantly would hand it a broken socket
+        // instead, which reads like a crash. Exchanges that have finished cost nothing here.
+        server.stop(SHUTDOWN_GRACE_SECONDS);
         connections.shutdownNow();
     }
 }

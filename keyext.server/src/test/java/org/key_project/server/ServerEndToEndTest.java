@@ -119,6 +119,35 @@ class ServerEndToEndTest {
     }
 
     @Test
+    void refusesToShutDownWhileWorkIsInProgress() throws Exception {
+        // Occupy the worker with a load, then ask the server to stop. A client that started work
+        // and then asked to stop has probably lost track of one of the two, and throwing the work
+        // away on that basis would be the wrong guess to make on its behalf.
+        client.result("environment.load", "{\"path\":\"" + json(fixture()) + "\"}");
+
+        assertThat(client.errorCode("server.shutdown", null)).isEqualTo(-32007);
+        assertThat(client.errorCode("server.shutdown", "{\"force\":false}")).isEqualTo(-32007);
+        assertThat(client.result("server.health", null).get("ok").asBoolean()).isTrue();
+    }
+
+    @Test
+    void shutsDownWhenAskedAndNothingIsRunning() throws Exception {
+        assertThat(client.result("server.shutdown", null).get("ok").asBoolean()).isTrue();
+
+        // The acknowledgement is sent before the instance goes down, so the caller gets an answer
+        // rather than a broken socket.
+        instance.awaitShutdown();
+    }
+
+    @Test
+    void describesItselfWithTheDocumentItShips() throws Exception {
+        JsonNode document = client.result("server.describe", null);
+
+        assertThat(document.get("openrpc").asText()).isNotBlank();
+        assertThat(document.get("methods")).isNotEmpty();
+    }
+
+    @Test
     void rejectsUnknownMethods() throws Exception {
         assertThat(client.errorCode("no.such.method", null)).isEqualTo(-32601);
     }

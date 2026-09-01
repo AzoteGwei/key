@@ -32,6 +32,31 @@ public final class Params {
      * @return the deserialised parameters
      * @throws RpcException with {@link RpcErrorCode#INVALID_PARAMS} when they do not fit
      */
+    /**
+     * Reads the parameters as the given type, tolerating their absence.
+     *
+     * <p>
+     * For methods whose every parameter is optional: sending no {@code params} at all and sending
+     * an empty object mean the same thing, and a client should not have to know which this server
+     * prefers.
+     *
+     * @param type the expected shape
+     * @param <T> the expected shape
+     * @return the deserialised parameters, with every field at its default when none were given
+     * @throws RpcException with {@link RpcErrorCode#INVALID_PARAMS} when they do not fit
+     */
+    public <T> T asOptional(Class<T> type) {
+        if (node == null || node.isNull()) {
+            try {
+                return mapper.treeToValue(mapper.createObjectNode(), type);
+            } catch (Exception e) {
+                throw new RpcException(RpcErrorCode.INVALID_PARAMS,
+                    "Method requires parameters but none were given", null, e);
+            }
+        }
+        return as(type);
+    }
+
     public <T> T as(Class<T> type) {
         if (node == null || node.isNull()) {
             throw new RpcException(RpcErrorCode.INVALID_PARAMS,
