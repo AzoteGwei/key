@@ -107,7 +107,7 @@ class ProofRunTest {
 
         JsonNode finished = awaitTask(launched.get("taskId").asText());
         assertThat(finished.get("status").asText()).isEqualTo("SUCCEEDED");
-        assertThat(finished.get("result").get("outcome").asText()).isEqualTo("COMPLETED");
+        assertThat(finished.get("result").get("outcome").asText()).isEqualTo("EXHAUSTED");
         assertThat(finished.get("result").get("statistics").get("closed").asBoolean()).isTrue();
 
         // The authority is the proof itself, asked again afterwards.

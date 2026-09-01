@@ -14,6 +14,7 @@ import org.key_project.server.dto.GoalDiagnostics;
 import org.key_project.server.dto.GoalRef;
 import org.key_project.server.dto.ProofRef;
 import org.key_project.server.registry.ProofRegistry;
+import org.key_project.server.registry.RegisteredProof;
 import org.key_project.server.registry.TaskRegistry;
 import org.key_project.server.rpc.Concurrency;
 import org.key_project.server.rpc.JsonRpcDispatcher;
@@ -60,17 +61,18 @@ public final class DiagnosticsMethods {
     }
 
     private Object explainGoal(ExplainGoalRequest request) {
-        Proof proof = requireIdleProof(request.goal().proofId());
-        return StuckPointProbe.probe(requireGoal(proof, request.goal()), depth(request.maxDepth()));
+        RegisteredProof registered = requireIdleProof(request.goal().proofId());
+        return StuckPointProbe.probe(requireGoal(registered.proof(), request.goal()),
+            depth(request.maxDepth()), registered.lastSearchOutcome());
     }
 
     private Object listStuckPoints(ListStuckPointsRequest request) {
-        Proof proof = requireIdleProof(request.proof().proofId());
+        RegisteredProof registered = requireIdleProof(request.proof().proofId());
         int maxDepth = depth(request.maxDepth());
 
         List<GoalDiagnostics> perGoal = new ArrayList<>();
-        for (Goal goal : proof.openGoals()) {
-            perGoal.add(StuckPointProbe.probe(goal, maxDepth));
+        for (Goal goal : registered.proof().openGoals()) {
+            perGoal.add(StuckPointProbe.probe(goal, maxDepth, registered.lastSearchOutcome()));
         }
         perGoal.sort((left, right) -> Integer.compare(left.goalId(), right.goalId()));
         return perGoal;
@@ -89,14 +91,14 @@ public final class DiagnosticsMethods {
      * @return the proof
      * @throws RpcException with {@link RpcErrorCode#TASK_CONFLICT} when it is busy
      */
-    private Proof requireIdleProof(String proofId) {
+    private RegisteredProof requireIdleProof(String proofId) {
         String busy = tasks.activeTaskFor(new ProofRef(proofId));
         if (busy != null) {
             throw new RpcException(RpcErrorCode.TASK_CONFLICT, "Proof " + proofId
                 + " is being worked on by task " + busy
                 + "; the probe reads live goal state, so it waits for that to finish");
         }
-        return proofs.require(proofId).proof();
+        return proofs.require(proofId);
     }
 
     private static Goal requireGoal(Proof proof, GoalRef ref) {

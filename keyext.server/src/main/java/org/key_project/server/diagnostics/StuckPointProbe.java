@@ -21,6 +21,7 @@ import org.key_project.logic.PosInTerm;
 import org.key_project.logic.Term;
 import org.key_project.prover.sequent.PosInOccurrence;
 import org.key_project.prover.sequent.SequentFormula;
+import org.key_project.server.dto.AutoModeOutcome;
 import org.key_project.server.dto.GoalDiagnostics;
 import org.key_project.server.dto.SourcePosition;
 import org.key_project.server.dto.StuckPoint;
@@ -73,9 +74,12 @@ public final class StuckPointProbe {
      *
      * @param goal the goal to examine
      * @param maxDepth how deep into each formula to look
+     * @param lastSearchOutcome how the last automatic search on this proof ended, passed through
+     *        so an empty result can be read correctly; {@code null} when none has been run
      * @return the rules that want to apply and cannot
      */
-    public static GoalDiagnostics probe(Goal goal, int maxDepth) {
+    public static GoalDiagnostics probe(Goal goal, int maxDepth,
+            @Nullable AutoModeOutcome lastSearchOutcome) {
         Scan scan = scan(goal, maxDepth);
         List<StuckPoint> stuck = new ArrayList<>();
         for (Candidate candidate : scan.candidates()) {
@@ -84,7 +88,8 @@ public final class StuckPointProbe {
                 stuck.add(point);
             }
         }
-        return new GoalDiagnostics(goal.node().serialNr(), List.copyOf(stuck), scan.truncated());
+        return new GoalDiagnostics(goal.node().serialNr(), List.copyOf(stuck), scan.truncated(),
+            lastSearchOutcome);
     }
 
     /**

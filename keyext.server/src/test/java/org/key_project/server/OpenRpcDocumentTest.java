@@ -8,6 +8,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
+import org.key_project.server.dto.AutoModeOutcome;
+import org.key_project.server.dto.ProofObligationKind;
+import org.key_project.server.dto.SequentFormat;
+import org.key_project.server.dto.StuckReason;
+import org.key_project.server.dto.TaskKind;
+import org.key_project.server.dto.TaskStatus;
 import org.key_project.server.rpc.RpcErrorCode;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -110,6 +116,34 @@ class OpenRpcDocumentTest {
         assertThat(document.get("info").get("description").asText())
                 .contains("Proof.closed()");
         assertThat(text).contains("It does NOT mean a proof closed");
+    }
+
+    @Test
+    void everyEnumItDocumentsHasTheValuesTheServerActuallySends() throws Exception {
+        JsonNode schemas = client.result("server.describe", null).get("components").get("schemas");
+
+        // The method-name check above says nothing about shapes, and an enum is exactly where a
+        // document rots unnoticed: a value is added to the Java side, clients keep the old list,
+        // and the mismatch only shows up as an unparseable response in somebody else's program.
+        assertEnum(schemas, "TaskKind", TaskKind.class);
+        assertEnum(schemas, "TaskStatus", TaskStatus.class);
+        assertEnum(schemas, "ProofObligationKind", ProofObligationKind.class);
+        assertEnum(schemas, "SequentFormat", SequentFormat.class);
+        assertEnum(schemas, "StuckReason", StuckReason.class);
+        assertEnum(schemas, "AutoModeOutcome", AutoModeOutcome.class);
+    }
+
+    private static void assertEnum(JsonNode schemas, String name, Class<? extends Enum<?>> type) {
+        JsonNode declared = schemas.path(name).path("enum");
+        assertThat(declared).describedAs("%s is not described", name).isNotEmpty();
+        List<String> documented = new ArrayList<>();
+        declared.forEach(value -> documented.add(value.asText()));
+
+        List<String> actual = new ArrayList<>();
+        for (Enum<?> constant : type.getEnumConstants()) {
+            actual.add(constant.name());
+        }
+        assertThat(documented).describedAs("%s", name).containsExactlyInAnyOrderElementsOf(actual);
     }
 
     private static Set<String> documentedMethods(JsonNode document) {

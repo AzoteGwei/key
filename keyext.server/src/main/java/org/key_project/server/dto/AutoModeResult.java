@@ -11,6 +11,11 @@ package org.key_project.server.dto;
  * {@link TaskStatus#SUCCEEDED} carrying {@code closed: false} is the normal, expected outcome of
  * an unsuccessful proof attempt: the task did its work, the proof is still open.
  *
+ * <p>
+ * Read {@code outcome} alongside it. {@code EXHAUSTED} with open goals means the prover is out of
+ * ideas and more time will not help; anything to do with a limit means it was still working when
+ * it was stopped.
+ *
  * @param proof the proof that was worked on
  * @param outcome why the search stopped
  * @param statistics the state of the proof afterwards

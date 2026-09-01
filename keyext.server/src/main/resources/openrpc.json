@@ -1458,10 +1458,16 @@
       "AutoModeOutcome": {
         "type": "string",
         "enum": [
-          "COMPLETED",
-          "TIMEOUT"
+          "EXHAUSTED",
+          "MAX_RULES",
+          "BUDGET_ELAPSED",
+          "STRATEGY_TIMEOUT",
+          "NON_CLOSEABLE_GOAL",
+          "STOP_CONDITION",
+          "PROOF_ERRONEOUS",
+          "INTERRUPTED"
         ],
-        "description": "Why the search stopped. Neither value says anything about success: COMPLETED means KeY ran out of things to try, closed or not."
+        "description": "Why the search stopped. None of these says anything about success. What they do say is whether more of the same would help: MAX_RULES, BUDGET_ELAPSED and STRATEGY_TIMEOUT mean the search was still working when it was stopped, while EXHAUSTED means the prover did everything it knows and the goals left need a script, a solver or a specification rather than more time."
       },
       "AutoModeResult": {
         "type": "object",
@@ -1624,7 +1630,7 @@
       },
       "GoalDiagnostics": {
         "type": "object",
-        "description": "An empty stuckPoints list is a finding, not a blank: no built-in rule applies here, so the goal is not waiting on a missing specification and is most likely simply not provable.",
+        "description": "An empty stuckPoints list is a finding, not a blank: no built-in rule applies here, so the goal is not waiting on a missing specification. Read it with lastSearchOutcome to tell a prover that ran out of ideas from one that ran out of budget.",
         "properties": {
           "goalId": {
             "type": "integer"
@@ -1638,6 +1644,10 @@
           "truncated": {
             "type": "boolean",
             "description": "The probe reached its depth ceiling before the end of a formula."
+          },
+          "lastSearchOutcome": {
+            "$ref": "#/components/schemas/AutoModeOutcome",
+            "description": "How the last automatic search on this proof ended, absent when none has run. Read an empty stuckPoints list together with this: empty after EXHAUSTED means the prover tried and ran out of ideas, empty after a limit means it never finished looking. The two are the same list and opposite problems."
           }
         },
         "required": [

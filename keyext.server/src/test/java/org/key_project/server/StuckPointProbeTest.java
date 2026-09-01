@@ -87,7 +87,7 @@ class StuckPointProbeTest {
         int openBefore = proof.openGoals().size();
         int serialBefore = highestSerial(proof);
 
-        GoalDiagnostics diagnostics = StuckPointProbe.probe(goal, UNBOUNDED);
+        GoalDiagnostics diagnostics = StuckPointProbe.probe(goal, UNBOUNDED, null);
 
         // forceInstantiate builds a rule application and the result is thrown away. If that ever
         // left a mark on the proof, every diagnostic call would quietly alter the thing it was
@@ -108,14 +108,14 @@ class StuckPointProbeTest {
     void aShallowCeilingIsReportedRatherThanPassedOffAsComplete() throws Exception {
         Goal goal = stuckGoalOf("no-invariant", "Summer");
 
-        GoalDiagnostics deep = StuckPointProbe.probe(goal, UNBOUNDED);
-        GoalDiagnostics shallow = StuckPointProbe.probe(goal, 0);
+        GoalDiagnostics deep = StuckPointProbe.probe(goal, UNBOUNDED, null);
+        GoalDiagnostics shallow = StuckPointProbe.probe(goal, 0, null);
 
         assertThat(deep.truncated()).isFalse();
         assertThat(shallow.truncated()).isTrue();
         // The default has to be generous enough that a real goal is answered in full; a diagnostic
         // that routinely comes back truncated would train an agent to ignore the flag.
-        assertThat(StuckPointProbe.probe(goal, StuckPointProbe.DEFAULT_MAX_DEPTH).truncated())
+        assertThat(StuckPointProbe.probe(goal, StuckPointProbe.DEFAULT_MAX_DEPTH, null).truncated())
                 .isFalse();
     }
 

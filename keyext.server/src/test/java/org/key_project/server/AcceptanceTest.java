@@ -64,7 +64,7 @@ class AcceptanceTest {
                 .get("taskId").asText());
 
         assertThat(finished.get("status").asText()).isEqualTo("SUCCEEDED");
-        assertThat(finished.get("result").get("outcome").asText()).isEqualTo("COMPLETED");
+        assertThat(finished.get("result").get("outcome").asText()).isEqualTo("EXHAUSTED");
 
         // The task did its work and the work found nothing. Those are two separate facts and the
         // protocol has to keep saying both.
@@ -95,7 +95,7 @@ class AcceptanceTest {
                 .asText());
 
         assertThat(finished.get("status").asText()).isEqualTo("SUCCEEDED");
-        assertThat(finished.get("result").get("outcome").asText()).isEqualTo("TIMEOUT");
+        assertThat(finished.get("result").get("outcome").asText()).isEqualTo("BUDGET_ELAPSED");
         assertThat(finished.get("result").get("statistics").get("closed").asBoolean()).isFalse();
         assertThat(client.result("proof.getStatistics", proof(proofId)).get("closed").asBoolean())
                 .isFalse();
@@ -116,7 +116,7 @@ class AcceptanceTest {
                 .get("taskId").asText());
 
         assertThat(finished.get("status").asText()).isEqualTo("SUCCEEDED");
-        assertThat(finished.get("result").get("outcome").asText()).isEqualTo("COMPLETED");
+        assertThat(finished.get("result").get("outcome").asText()).isEqualTo("EXHAUSTED");
         assertThat(finished.get("result").get("statistics").get("closed").asBoolean()).isTrue();
         assertThat(client.result("proof.getStatistics", proof(proofId)).get("openGoals").asInt())
                 .isZero();

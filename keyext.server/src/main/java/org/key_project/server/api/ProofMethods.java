@@ -3,13 +3,16 @@
  * SPDX-License-Identifier: GPL-2.0-only */
 package org.key_project.server.api;
 
+import de.uka.ilkd.key.proof.Goal;
 import de.uka.ilkd.key.proof.Proof;
 import de.uka.ilkd.key.speclang.Contract;
 import de.uka.ilkd.key.util.ProofStarter;
 
+import org.key_project.prover.engine.ProofSearchInformation;
 import org.key_project.server.ProofFacts;
 import org.key_project.server.ServerUserInterfaceControl;
 import org.key_project.server.dto.AutoModeOutcome;
+import org.key_project.server.dto.AutoModeOutcomes;
 import org.key_project.server.dto.AutoModeResult;
 import org.key_project.server.dto.Ok;
 import org.key_project.server.dto.ProofRef;
@@ -110,11 +113,15 @@ public final class ProofMethods {
             // difference is that this runs it here, where a failure is still ours to report.
             ProofStarter starter = new ProofStarter(control, false);
             starter.init(proof);
-            InterruptibleRun.Result<?> run =
+            InterruptibleRun.Result<ProofSearchInformation<Proof, Goal>> run =
                 InterruptibleRun.run(task, timeoutMs, starter::start);
 
+            // KeY's own account of why it stopped, not an inference from how long it took. The
+            // difference between running out of ideas and running out of budget is the whole
+            // value of this field, and only the prover knows which.
             AutoModeOutcome outcome =
-                run.timedOut() ? AutoModeOutcome.TIMEOUT : AutoModeOutcome.COMPLETED;
+                AutoModeOutcomes.of(run.value().stopReason(), run.timedOut());
+            registered.searchEnded(outcome);
             // Read afterwards, from the proof itself: whether anything was achieved is KeY's
             // answer, not a conclusion drawn from the search having returned.
             return new AutoModeResult(ref, outcome, ProofFacts.describe(proof));

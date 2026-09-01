@@ -90,6 +90,46 @@ class DiagnosticsMethodsTest {
     }
 
     @Test
+    void tellsAProverOutOfIdeasFromOneOutOfBudget() throws Exception {
+        String proofId = symbolicallyExecute("broken-max", "Max");
+
+        // Run to the strategy's own end. The fixture is unprovable, so goals remain, and no
+        // built-in rule is waiting on anything.
+        JsonNode finished = awaitTask(client.result("proof.runAuto", proof(proofId))
+                .get("taskId").asText());
+        assertThat(finished.get("result").get("outcome").asText()).isEqualTo("EXHAUSTED");
+
+        JsonNode exhausted = client.result("diagnostics.listStuckPoints", proof(proofId));
+        assertThat(exhausted.get(0).get("stuckPoints")).isEmpty();
+        // Without this, an empty list means two opposite things and the caller cannot tell which:
+        // a prover that gave everything it had, or one that never finished looking. The first
+        // calls for a script or a solver; the second just calls for more budget.
+        assertThat(exhausted.get(0).get("lastSearchOutcome").asText()).isEqualTo("EXHAUSTED");
+
+        // Now the other half of the distinction, on a proof that was stopped rather than spent.
+        String cutShort = symbolicallyExecute("no-invariant", "Summer");
+        awaitTask(client.result("proof.runAuto",
+            "{\"proof\":{\"proofId\":\"" + cutShort + "\"},\"timeoutMs\":1}").get("taskId")
+                .asText());
+
+        JsonNode interrupted = client.result("diagnostics.listStuckPoints", proof(cutShort));
+        assertThat(interrupted.get(0).get("lastSearchOutcome").asText())
+                .isEqualTo("BUDGET_ELAPSED");
+    }
+
+    @Test
+    void saysNothingAboutASearchThatNeverRan() throws Exception {
+        String proofId = symbolicallyExecute("no-invariant", "Summer");
+
+        JsonNode perGoal = client.result("diagnostics.listStuckPoints", proof(proofId));
+
+        // A script ran, but no automatic search did. Reporting an ending for a search that never
+        // happened would be worse than reporting none.
+        assertThat(perGoal.get(0).has("lastSearchOutcome")).isFalse();
+        assertThat(perGoal.get(0).get("stuckPoints")).isNotEmpty();
+    }
+
+    @Test
     void saysSoWhenItStoppedLookingEarly() throws Exception {
         String proofId = symbolicallyExecute("no-invariant", "Summer");
 
