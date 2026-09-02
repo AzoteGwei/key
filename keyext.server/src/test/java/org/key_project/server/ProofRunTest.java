@@ -135,19 +135,31 @@ class ProofRunTest {
     }
 
     @Test
-    void refusesASecondSearchOnTheSameProof() throws Exception {
+    void aSecondSearchNeverOverlapsTheFirstOnOneProof() throws Exception {
         String envId = loadFixture();
         String contractId = contractIdFor(envId, "add");
         String proofId = client.result("proof.start",
             "{\"env\":{\"envId\":\"" + envId + "\"},\"contractId\":\"" + contractId + "\"}")
                 .get("proofId").asText();
 
-        JsonNode launched = client.result("proof.runAuto", proof(proofId));
-        int second = client.errorCode("proof.runAuto", proof(proofId));
+        String first = client.result("proof.runAuto", proof(proofId)).get("taskId").asText();
+        JsonNode second = client.call("proof.runAuto", proof(proofId));
 
-        // Two searches on one proof would corrupt it; the second must be refused, not queued.
-        assertThat(second).isEqualTo(-32007);
-        awaitTask(launched.get("taskId").asText());
+        // Which of the two branches below is taken is a matter of timing: the search on this
+        // fixture can be over before the second request lands. So what is asserted is the promise
+        // itself -- two searches never overlap on one proof -- and not which way the race fell.
+        // That the refusal covers the queued window too is settled without a clock in
+        // TaskRegistryTest, where the task's lifecycle is driven by hand.
+        if (second.has("error")) {
+            assertThat(second.get("error").get("code").asInt()).isEqualTo(-32007);
+        } else {
+            // Accepted, so the first was already over when it was asked for: a task that has
+            // left PENDING and RUNNING never returns to them.
+            assertThat(client.result("task.get", "{\"taskId\":\"" + first + "\"}").get("status")
+                    .asText()).isNotIn("PENDING", "RUNNING");
+            awaitTask(second.get("result").get("taskId").asText());
+        }
+        awaitTask(first);
     }
 
     @Test
