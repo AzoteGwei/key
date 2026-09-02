@@ -1,12 +1,9 @@
 name: CodeQuality
+# Disabled on the azote/keyext-server branch: this branch releases through
+# .github/workflows/release.yml alone. Restore the triggers below before merging into main.
 on:
   workflow_dispatch:
-  merge_group:
-  pull_request:
-  push:
-    branches:
-      - main
-      - 'KeY-*'
+  # merge_group, pull_request and push (main / KeY-*) removed.
 
 jobs:
   checkerFramework:

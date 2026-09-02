@@ -1,0 +1,160 @@
+name: Release keyext-server
+
+# A tag push runs the workflow file as it exists in the tagged commit, so this file has to be
+# on the branch before the tag is created. Tags that already exist do not pick it up.
+on:
+  push:
+    tags:
+      - 'keyext-server-v*'
+
+permissions:
+  contents: write   # to create the release; nothing is published to Maven, so no id-token
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  JAVA_VERSION: 21
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The changelog is read out of the history between two tags, so shallow will not do.
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v5.7.0
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Work out the version and where its files will land
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          suffix="${tag#keyext-server-}"
+
+          # build.gradle reads $BUILD_NUMBER and appends it to the base version; left unset it
+          # would stamp every artifact "-dev". The base version is taken from the build file
+          # rather than written out here, so a version bump there carries over on its own.
+          base=$(grep -oP '^version = "\K[^"$]+' build.gradle)
+          if [ -z "$base" ]; then
+            echo "Could not read the base version out of build.gradle" >&2
+            exit 1
+          fi
+          full="$base-$suffix"
+
+          # Artifact names are spelled out rather than globbed: the shadow plugin also registers
+          # a shadowDistZip, and "keyext-server-*.zip" would happily match that one too.
+          {
+            echo "TAG=$tag"
+            echo "VERSION_SUFFIX=$suffix"
+            echo "BUILD_NUMBER=$suffix"
+            echo "FULL_VERSION=$full"
+            echo "SERVER_JAR=keyext.server/build/libs/keyext.server-$full-exe.jar"
+            echo "SERVER_ZIP=keyext.server/build/distributions/keyext-server-$full.zip"
+            echo "KEY_UI_JAR=key.ui/build/libs/key-$full-exe.jar"
+            echo "JAVADOC_TAR=key-javadoc.tar.xz"
+          } >> "$GITHUB_ENV"
+
+      # The branch runs no other CI, so this is the only gate between a tag and a release.
+      # ":keyext.server:test" pulls in smtDegradationTest, which runs in a JVM of its own.
+      - name: Run the keyext.server tests
+        run: ./gradlew :keyext.server:test
+
+      - name: Build the release artifacts
+        run: ./gradlew --parallel :keyext.server:shadowJar :keyext.server:distZip :key.ui:shadowJar
+
+      # Not folded into the line above, and deliberately without --parallel: alldoc
+      # (build.gradle) resolves every subproject's compileClasspath while it executes, which
+      # Gradle refuses to do from a parallel worker ("attempted without an exclusive lock").
+      - name: Build the Javadoc
+        run: ./gradlew alldoc
+
+      - name: Package the Javadoc
+        run: tar -cJf "$JAVADOC_TAR" build/docs/javadoc
+
+      - name: Upload keyext.server artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: keyext-server-${{ env.VERSION_SUFFIX }}
+          path: |
+            ${{ env.SERVER_JAR }}
+            ${{ env.SERVER_ZIP }}
+          retention-days: 30
+
+      - name: Upload key.ui and Javadoc artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: key-ui-and-javadoc-${{ env.VERSION_SUFFIX }}
+          path: |
+            ${{ env.KEY_UI_JAR }}
+            ${{ env.JAVADOC_TAR }}
+          retention-days: 30
+
+      - name: Write the release notes
+        run: |
+          set -euo pipefail
+
+          # The nearest earlier release of this same series. On the first release there is none,
+          # and the interesting range is everything this branch added on top of main.
+          prev=$(git describe --tags --abbrev=0 --match 'keyext-server-v*' "$TAG^" 2>/dev/null || true)
+          if [ -n "$prev" ]; then
+            heading="Changes since $prev"
+          else
+            git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main' 2>/dev/null || true
+            prev=$(git merge-base origin/main "$TAG" 2>/dev/null || true)
+            [ -n "$prev" ] || prev=$(git rev-list --max-parents=0 "$TAG" | tail -1)
+            heading="Changes since this branch left main"
+          fi
+
+          server_jar_name=$(basename "$SERVER_JAR")
+
+          # Deliberately not "gh release create --generate-notes": that summarises merged pull
+          # requests, and the commits on this branch never went through one, so it would come
+          # back empty. The commit subjects are the changelog here.
+          {
+            echo "Headless JSON-RPC server that exposes KeY to automated agents, built from \`$TAG\`."
+            echo
+            echo "## $heading"
+            echo
+            git log --no-merges --pretty='- %s (%h)' "$prev..$TAG"
+            echo
+            echo "## Files"
+            echo
+            echo "| File | What it is |"
+            echo "| --- | --- |"
+            echo "| \`$server_jar_name\` | The server and its dependencies in one jar: \`java -jar $server_jar_name\` |"
+            echo "| \`$(basename "$SERVER_ZIP")\` | The same server as a distribution with a \`bin/keyext-server\` start script |"
+            echo "| \`$(basename "$KEY_UI_JAR")\` | The KeY GUI, for the same sources |"
+            echo "| \`$JAVADOC_TAR\` | Javadoc across every subproject |"
+            echo
+            echo "**Full Changelog**: ${{ github.server_url }}/${{ github.repository }}/compare/$prev...$TAG"
+          } > notes.md
+
+          case "$VERSION_SUFFIX" in
+            *-rc*|*-alpha*|*-beta*|*-pre*) echo "PRERELEASE=--prerelease" >> "$GITHUB_ENV" ;;
+            *)                             echo "PRERELEASE=" >> "$GITHUB_ENV" ;;
+          esac
+
+          cat notes.md
+
+      - name: Create the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --title "keyext-server $VERSION_SUFFIX" \
+            --notes-file notes.md \
+            --verify-tag \
+            $PRERELEASE \
+            "$SERVER_JAR" "$SERVER_ZIP" "$KEY_UI_JAR" "$JAVADOC_TAR"

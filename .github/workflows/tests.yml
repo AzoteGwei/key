@@ -1,15 +1,10 @@
 name: Tests
 
+# Disabled on the azote/keyext-server branch: this branch releases through
+# .github/workflows/release.yml alone. Restore the triggers below before merging into main.
 on:
   workflow_dispatch:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches:
-      - "main"
-      - "KeY-*"
-      - "releases/*"
-  merge_group:
+  # push (main), pull_request (main / KeY-* / releases/*) and merge_group removed.
 
 permissions:
   contents: write
