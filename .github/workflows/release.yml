@@ -70,6 +70,18 @@ jobs:
       - name: Run the keyext.server tests
         run: ./gradlew :keyext.server:test
 
+      # Runs on failure too: without this the report that says which test broke dies with the
+      # runner, and a red release is diagnosed by guesswork.
+      - name: Upload the test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: keyext-server-test-report-${{ env.VERSION_SUFFIX }}
+          path: |
+            keyext.server/build/reports/tests/
+            keyext.server/build/test-results/
+          retention-days: 30
+
       - name: Build the release artifacts
         run: ./gradlew --parallel :keyext.server:shadowJar :keyext.server:distZip :key.ui:shadowJar
 
